@@ -1,0 +1,7 @@
+// Public, non-sensitive build settings. This file is safe to commit.
+ZHIHENG_BUILD_ENVIRONMENT = local
+ZHIHENG_AI_NETWORK_ENABLED = YES
+ZHIHENG_AI_PROVIDER = deepseek-responses-via-proxy
+
+// Local overrides are optional and intentionally excluded from version control.
+#include? "Secrets.xcconfig"

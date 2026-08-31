@@ -1,0 +1,750 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A10000000000000000000001 /* ZhihengApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000001 /* ZhihengApp.swift */; };
+		A10000000000000000000002 /* RootTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000002 /* RootTabView.swift */; };
+		A10000000000000000000003 /* TodayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000003 /* TodayView.swift */; };
+		A10000000000000000000004 /* AppReadiness.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000004 /* AppReadiness.swift */; };
+		A10000000000000000000005 /* AppReadinessTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000005 /* AppReadinessTests.swift */; };
+		A10000000000000000000006 /* HealthMetricSample.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000009 /* HealthMetricSample.swift */; };
+		A10000000000000000000007 /* HealthDataService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000A /* HealthDataService.swift */; };
+		A10000000000000000000008 /* HealthMetricSampleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000B /* HealthMetricSampleTests.swift */; };
+		A10000000000000000000009 /* CarePlanModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000C /* CarePlanModels.swift */; };
+		A1000000000000000000000A /* CarePlanService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000D /* CarePlanService.swift */; };
+		A1000000000000000000000B /* CarePlanModelsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000E /* CarePlanModelsTests.swift */; };
+		A1000000000000000000000C /* FeaturePlaceholderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000F /* FeaturePlaceholderView.swift */; };
+		A1000000000000000000000D /* NavigationModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000010 /* NavigationModelTests.swift */; };
+		A1000000000000000000000E /* AppContentState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000011 /* AppContentState.swift */; };
+		A1000000000000000000000F /* AppStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000012 /* AppStatusView.swift */; };
+		A10000000000000000000010 /* AppContentStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000013 /* AppContentStateTests.swift */; };
+		A10000000000000000000011 /* CareKitStore in Frameworks */ = {isa = PBXBuildFile; productRef = C10000000000000000000001 /* CareKitStore */; };
+		A10000000000000000000012 /* CareKitPlanStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000017 /* CareKitPlanStore.swift */; };
+		A10000000000000000000013 /* CareKitPlanStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000018 /* CareKitPlanStoreTests.swift */; };
+		A10000000000000000000014 /* HealthAccessExplanationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000019 /* HealthAccessExplanationView.swift */; };
+		A10000000000000000000015 /* HealthAccessExplanationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000001A /* HealthAccessExplanationTests.swift */; };
+		A10000000000000000000016 /* HealthKitAuthorizationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000001B /* HealthKitAuthorizationService.swift */; };
+		A10000000000000000000017 /* HealthKitAuthorizationServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000001C /* HealthKitAuthorizationServiceTests.swift */; };
+		A10000000000000000000018 /* HealthKitDataService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000001D /* HealthKitDataService.swift */; };
+		A10000000000000000000019 /* HealthKitDataServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000001E /* HealthKitDataServiceTests.swift */; };
+		A1000000000000000000001A /* DemoHealthDataService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000001F /* DemoHealthDataService.swift */; };
+		A1000000000000000000001B /* DemoHealthDataServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000020 /* DemoHealthDataServiceTests.swift */; };
+		A1000000000000000000001C /* HealthDataQuality.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000021 /* HealthDataQuality.swift */; };
+		A1000000000000000000001D /* HealthDataQualityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000022 /* HealthDataQualityTests.swift */; };
+		A1000000000000000000001E /* InsightsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000023 /* InsightsView.swift */; };
+		A1000000000000000000001F /* HealthMetricDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000024 /* HealthMetricDetailView.swift */; };
+		A10000000000000000000020 /* HealthBaseline.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000025 /* HealthBaseline.swift */; };
+		A10000000000000000000021 /* HealthBaselineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000026 /* HealthBaselineTests.swift */; };
+		A10000000000000000000022 /* TodayDashboardModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000027 /* TodayDashboardModels.swift */; };
+		A10000000000000000000023 /* TodayDashboardModelsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000028 /* TodayDashboardModelsTests.swift */; };
+		A10000000000000000000024 /* TodayDashboardPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000029 /* TodayDashboardPresentation.swift */; };
+		A10000000000000000000025 /* TodayDashboardPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000002A /* TodayDashboardPresentationTests.swift */; };
+		A10000000000000000000026 /* SystemActivityRingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000002B /* SystemActivityRingView.swift */; };
+		A10000000000000000000027 /* InsightsDashboardPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000002C /* InsightsDashboardPresentation.swift */; };
+		A10000000000000000000028 /* InsightsDashboardPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000002D /* InsightsDashboardPresentationTests.swift */; };
+		A10000000000000000000029 /* HRVStatusFace.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000002E /* HRVStatusFace.swift */; };
+		A1000000000000000000002A /* HealthDataSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000002F /* HealthDataSession.swift */; };
+		A1000000000000000000002B /* HealthDataSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000030 /* HealthDataSessionTests.swift */; };
+		A1000000000000000000002C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000031 /* Assets.xcassets */; };
+		A1000000000000000000002D /* HealthAIModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000032 /* HealthAIModels.swift */; };
+		A1000000000000000000002E /* AIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000033 /* AIService.swift */; };
+		A1000000000000000000002F /* HealthFactPackBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000034 /* HealthFactPackBuilder.swift */; };
+		A10000000000000000000030 /* HealthAISafetyRuleEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000035 /* HealthAISafetyRuleEngine.swift */; };
+		A10000000000000000000031 /* OpenAIProxyService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000036 /* OpenAIProxyService.swift */; };
+		A10000000000000000000032 /* AssistantView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000037 /* AssistantView.swift */; };
+		A10000000000000000000033 /* HealthAIFeatureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000038 /* HealthAIFeatureTests.swift */; };
+		A10000000000000000000034 /* DeepSeekPersonalService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000039 /* DeepSeekPersonalService.swift */; };
+		A10000000000000000000035 /* AssistantConversationStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000003A /* AssistantConversationStore.swift */; };
+		A10000000000000000000036 /* MicroPlanView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000003B /* MicroPlanView.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		A30000000000000000000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A90000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A70000000000000000000001;
+			remoteInfo = Zhiheng;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		A20000000000000000000001 /* ZhihengApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZhihengApp.swift; sourceTree = "<group>"; };
+		A20000000000000000000002 /* RootTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootTabView.swift; sourceTree = "<group>"; };
+		A20000000000000000000003 /* TodayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayView.swift; sourceTree = "<group>"; };
+		A20000000000000000000004 /* AppReadiness.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppReadiness.swift; sourceTree = "<group>"; };
+		A20000000000000000000005 /* AppReadinessTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppReadinessTests.swift; sourceTree = "<group>"; };
+		A20000000000000000000006 /* Zhiheng.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Zhiheng.entitlements; sourceTree = "<group>"; };
+		A20000000000000000000007 /* Zhiheng.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Zhiheng.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A20000000000000000000008 /* ZhihengTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ZhihengTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		A20000000000000000000009 /* HealthMetricSample.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthMetricSample.swift; sourceTree = "<group>"; };
+		A2000000000000000000000A /* HealthDataService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthDataService.swift; sourceTree = "<group>"; };
+		A2000000000000000000000B /* HealthMetricSampleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthMetricSampleTests.swift; sourceTree = "<group>"; };
+		A2000000000000000000000C /* CarePlanModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarePlanModels.swift; sourceTree = "<group>"; };
+		A2000000000000000000000D /* CarePlanService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarePlanService.swift; sourceTree = "<group>"; };
+		A2000000000000000000000E /* CarePlanModelsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarePlanModelsTests.swift; sourceTree = "<group>"; };
+		A2000000000000000000000F /* FeaturePlaceholderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeaturePlaceholderView.swift; sourceTree = "<group>"; };
+		A20000000000000000000010 /* NavigationModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationModelTests.swift; sourceTree = "<group>"; };
+		A20000000000000000000011 /* AppContentState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppContentState.swift; sourceTree = "<group>"; };
+		A20000000000000000000012 /* AppStatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStatusView.swift; sourceTree = "<group>"; };
+		A20000000000000000000013 /* AppContentStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppContentStateTests.swift; sourceTree = "<group>"; };
+		A20000000000000000000014 /* Base.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Base.xcconfig; sourceTree = "<group>"; };
+		A20000000000000000000015 /* Secrets.xcconfig.example */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Secrets.xcconfig.example; sourceTree = "<group>"; };
+		A20000000000000000000016 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
+		A20000000000000000000017 /* CareKitPlanStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CareKitPlanStore.swift; sourceTree = "<group>"; };
+		A20000000000000000000018 /* CareKitPlanStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CareKitPlanStoreTests.swift; sourceTree = "<group>"; };
+		A20000000000000000000019 /* HealthAccessExplanationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthAccessExplanationView.swift; sourceTree = "<group>"; };
+		A2000000000000000000001A /* HealthAccessExplanationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthAccessExplanationTests.swift; sourceTree = "<group>"; };
+		A2000000000000000000001B /* HealthKitAuthorizationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthKitAuthorizationService.swift; sourceTree = "<group>"; };
+		A2000000000000000000001C /* HealthKitAuthorizationServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthKitAuthorizationServiceTests.swift; sourceTree = "<group>"; };
+		A2000000000000000000001D /* HealthKitDataService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthKitDataService.swift; sourceTree = "<group>"; };
+		A2000000000000000000001E /* HealthKitDataServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthKitDataServiceTests.swift; sourceTree = "<group>"; };
+		A2000000000000000000001F /* DemoHealthDataService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoHealthDataService.swift; sourceTree = "<group>"; };
+		A20000000000000000000020 /* DemoHealthDataServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoHealthDataServiceTests.swift; sourceTree = "<group>"; };
+		A20000000000000000000021 /* HealthDataQuality.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthDataQuality.swift; sourceTree = "<group>"; };
+		A20000000000000000000022 /* HealthDataQualityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthDataQualityTests.swift; sourceTree = "<group>"; };
+		A20000000000000000000023 /* InsightsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightsView.swift; sourceTree = "<group>"; };
+		A20000000000000000000024 /* HealthMetricDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthMetricDetailView.swift; sourceTree = "<group>"; };
+		A20000000000000000000025 /* HealthBaseline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthBaseline.swift; sourceTree = "<group>"; };
+		A20000000000000000000026 /* HealthBaselineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthBaselineTests.swift; sourceTree = "<group>"; };
+		A20000000000000000000027 /* TodayDashboardModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayDashboardModels.swift; sourceTree = "<group>"; };
+		A20000000000000000000028 /* TodayDashboardModelsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayDashboardModelsTests.swift; sourceTree = "<group>"; };
+		A20000000000000000000029 /* TodayDashboardPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayDashboardPresentation.swift; sourceTree = "<group>"; };
+		A2000000000000000000002A /* TodayDashboardPresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayDashboardPresentationTests.swift; sourceTree = "<group>"; };
+		A2000000000000000000002B /* SystemActivityRingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemActivityRingView.swift; sourceTree = "<group>"; };
+		A2000000000000000000002C /* InsightsDashboardPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightsDashboardPresentation.swift; sourceTree = "<group>"; };
+		A2000000000000000000002D /* InsightsDashboardPresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightsDashboardPresentationTests.swift; sourceTree = "<group>"; };
+		A2000000000000000000002E /* HRVStatusFace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HRVStatusFace.swift; sourceTree = "<group>"; };
+		A2000000000000000000002F /* HealthDataSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthDataSession.swift; sourceTree = "<group>"; };
+		A20000000000000000000030 /* HealthDataSessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthDataSessionTests.swift; sourceTree = "<group>"; };
+		A20000000000000000000031 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		A20000000000000000000032 /* HealthAIModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthAIModels.swift; sourceTree = "<group>"; };
+		A20000000000000000000033 /* AIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIService.swift; sourceTree = "<group>"; };
+		A20000000000000000000034 /* HealthFactPackBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthFactPackBuilder.swift; sourceTree = "<group>"; };
+		A20000000000000000000035 /* HealthAISafetyRuleEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthAISafetyRuleEngine.swift; sourceTree = "<group>"; };
+		A20000000000000000000036 /* OpenAIProxyService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIProxyService.swift; sourceTree = "<group>"; };
+		A20000000000000000000037 /* AssistantView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantView.swift; sourceTree = "<group>"; };
+		A20000000000000000000038 /* HealthAIFeatureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthAIFeatureTests.swift; sourceTree = "<group>"; };
+		A20000000000000000000039 /* DeepSeekPersonalService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeepSeekPersonalService.swift; sourceTree = "<group>"; };
+		A2000000000000000000003A /* AssistantConversationStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantConversationStore.swift; sourceTree = "<group>"; };
+		A2000000000000000000003B /* MicroPlanView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MicroPlanView.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		A40000000000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000000011 /* CareKitStore in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A40000000000000000000002 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		A50000000000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				A50000000000000000000002 /* Zhiheng */,
+				A50000000000000000000003 /* ZhihengTests */,
+				A5000000000000000000000A /* Config */,
+				A50000000000000000000004 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		A50000000000000000000002 /* Zhiheng */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000031 /* Assets.xcassets */,
+				A20000000000000000000001 /* ZhihengApp.swift */,
+				A20000000000000000000002 /* RootTabView.swift */,
+				A20000000000000000000003 /* TodayView.swift */,
+				A20000000000000000000023 /* InsightsView.swift */,
+				A20000000000000000000024 /* HealthMetricDetailView.swift */,
+				A2000000000000000000000F /* FeaturePlaceholderView.swift */,
+				A50000000000000000000005 /* Domain */,
+				A50000000000000000000010 /* AI */,
+				A5000000000000000000000B /* Infrastructure */,
+				A50000000000000000000008 /* Presentation */,
+				A20000000000000000000006 /* Zhiheng.entitlements */,
+			);
+			path = Zhiheng;
+			sourceTree = "<group>";
+		};
+		A50000000000000000000003 /* ZhihengTests */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000005 /* AppReadinessTests.swift */,
+				A2000000000000000000000B /* HealthMetricSampleTests.swift */,
+				A2000000000000000000000E /* CarePlanModelsTests.swift */,
+				A20000000000000000000010 /* NavigationModelTests.swift */,
+				A20000000000000000000013 /* AppContentStateTests.swift */,
+				A20000000000000000000018 /* CareKitPlanStoreTests.swift */,
+				A2000000000000000000001A /* HealthAccessExplanationTests.swift */,
+				A2000000000000000000001C /* HealthKitAuthorizationServiceTests.swift */,
+				A2000000000000000000001E /* HealthKitDataServiceTests.swift */,
+				A20000000000000000000020 /* DemoHealthDataServiceTests.swift */,
+				A20000000000000000000022 /* HealthDataQualityTests.swift */,
+				A20000000000000000000026 /* HealthBaselineTests.swift */,
+				A20000000000000000000028 /* TodayDashboardModelsTests.swift */,
+				A2000000000000000000002A /* TodayDashboardPresentationTests.swift */,
+				A2000000000000000000002D /* InsightsDashboardPresentationTests.swift */,
+				A20000000000000000000030 /* HealthDataSessionTests.swift */,
+				A20000000000000000000038 /* HealthAIFeatureTests.swift */,
+			);
+			path = ZhihengTests;
+			sourceTree = "<group>";
+		};
+		A50000000000000000000004 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000007 /* Zhiheng.app */,
+				A20000000000000000000008 /* ZhihengTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		A50000000000000000000005 /* Domain */ = {
+			isa = PBXGroup;
+			children = (
+				A50000000000000000000006 /* Models */,
+				A50000000000000000000007 /* Protocols */,
+			);
+			path = Domain;
+			sourceTree = "<group>";
+		};
+		A50000000000000000000006 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000004 /* AppReadiness.swift */,
+				A20000000000000000000009 /* HealthMetricSample.swift */,
+				A2000000000000000000000C /* CarePlanModels.swift */,
+				A20000000000000000000021 /* HealthDataQuality.swift */,
+				A20000000000000000000025 /* HealthBaseline.swift */,
+				A20000000000000000000027 /* TodayDashboardModels.swift */,
+				A20000000000000000000029 /* TodayDashboardPresentation.swift */,
+				A2000000000000000000002C /* InsightsDashboardPresentation.swift */,
+				A20000000000000000000032 /* HealthAIModels.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		A50000000000000000000007 /* Protocols */ = {
+			isa = PBXGroup;
+			children = (
+				A2000000000000000000000A /* HealthDataService.swift */,
+				A2000000000000000000000D /* CarePlanService.swift */,
+				A20000000000000000000033 /* AIService.swift */,
+			);
+			path = Protocols;
+			sourceTree = "<group>";
+		};
+		A50000000000000000000008 /* Presentation */ = {
+			isa = PBXGroup;
+			children = (
+				A50000000000000000000009 /* Components */,
+				A5000000000000000000000D /* HealthAccess */,
+				A50000000000000000000014 /* Assistant */,
+				A50000000000000000000016 /* Plans */,
+			);
+			path = Presentation;
+			sourceTree = "<group>";
+		};
+		A50000000000000000000009 /* Components */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000011 /* AppContentState.swift */,
+				A20000000000000000000012 /* AppStatusView.swift */,
+				A2000000000000000000002E /* HRVStatusFace.swift */,
+				A2000000000000000000002F /* HealthDataSession.swift */,
+			);
+			path = Components;
+			sourceTree = "<group>";
+		};
+		A5000000000000000000000A /* Config */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000014 /* Base.xcconfig */,
+				A20000000000000000000015 /* Secrets.xcconfig.example */,
+				A20000000000000000000016 /* README.md */,
+			);
+			path = Config;
+			sourceTree = "<group>";
+		};
+		A5000000000000000000000B /* Infrastructure */ = {
+			isa = PBXGroup;
+			children = (
+				A5000000000000000000000C /* CareKit */,
+				A5000000000000000000000E /* HealthKit */,
+				A5000000000000000000000F /* Demo */,
+			);
+			path = Infrastructure;
+			sourceTree = "<group>";
+		};
+		A5000000000000000000000C /* CareKit */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000017 /* CareKitPlanStore.swift */,
+			);
+			path = CareKit;
+			sourceTree = "<group>";
+		};
+		A5000000000000000000000D /* HealthAccess */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000019 /* HealthAccessExplanationView.swift */,
+			);
+			path = HealthAccess;
+			sourceTree = "<group>";
+		};
+		A5000000000000000000000E /* HealthKit */ = {
+			isa = PBXGroup;
+			children = (
+				A2000000000000000000001B /* HealthKitAuthorizationService.swift */,
+				A2000000000000000000001D /* HealthKitDataService.swift */,
+				A2000000000000000000002B /* SystemActivityRingView.swift */,
+			);
+			path = HealthKit;
+			sourceTree = "<group>";
+		};
+		A5000000000000000000000F /* Demo */ = {
+			isa = PBXGroup;
+			children = (
+				A2000000000000000000001F /* DemoHealthDataService.swift */,
+			);
+			path = Demo;
+			sourceTree = "<group>";
+		};
+		A50000000000000000000010 /* AI */ = {
+			isa = PBXGroup;
+			children = (
+				A50000000000000000000015 /* Conversation */,
+				A50000000000000000000011 /* FactPack */,
+				A50000000000000000000012 /* Safety */,
+				A50000000000000000000013 /* Networking */,
+			);
+			path = AI;
+			sourceTree = "<group>";
+		};
+		A50000000000000000000011 /* FactPack */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000034 /* HealthFactPackBuilder.swift */,
+			);
+			path = FactPack;
+			sourceTree = "<group>";
+		};
+		A50000000000000000000012 /* Safety */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000035 /* HealthAISafetyRuleEngine.swift */,
+			);
+			path = Safety;
+			sourceTree = "<group>";
+		};
+		A50000000000000000000013 /* Networking */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000036 /* OpenAIProxyService.swift */,
+				A20000000000000000000039 /* DeepSeekPersonalService.swift */,
+			);
+			path = Networking;
+			sourceTree = "<group>";
+		};
+		A50000000000000000000014 /* Assistant */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000037 /* AssistantView.swift */,
+			);
+			path = Assistant;
+			sourceTree = "<group>";
+		};
+		A50000000000000000000015 /* Conversation */ = {
+			isa = PBXGroup;
+			children = (
+				A2000000000000000000003A /* AssistantConversationStore.swift */,
+			);
+			path = Conversation;
+			sourceTree = "<group>";
+		};
+		A50000000000000000000016 /* Plans */ = {
+			isa = PBXGroup;
+			children = (
+				A2000000000000000000003B /* MicroPlanView.swift */,
+			);
+			path = Plans;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		A70000000000000000000001 /* Zhiheng */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A80000000000000000000002 /* Build configuration list for PBXNativeTarget "Zhiheng" */;
+			buildPhases = (
+				A60000000000000000000001 /* Sources */,
+				A40000000000000000000001 /* Frameworks */,
+				A60000000000000000000002 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Zhiheng;
+			packageProductDependencies = (
+				C10000000000000000000001 /* CareKitStore */,
+			);
+			productName = Zhiheng;
+			productReference = A20000000000000000000007 /* Zhiheng.app */;
+			productType = "com.apple.product-type.application";
+		};
+		A70000000000000000000002 /* ZhihengTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A80000000000000000000003 /* Build configuration list for PBXNativeTarget "ZhihengTests" */;
+			buildPhases = (
+				A60000000000000000000003 /* Sources */,
+				A40000000000000000000002 /* Frameworks */,
+				A60000000000000000000004 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A30000000000000000000002 /* PBXTargetDependency */,
+			);
+			name = ZhihengTests;
+			productName = ZhihengTests;
+			productReference = A20000000000000000000008 /* ZhihengTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		A90000000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2660;
+				LastUpgradeCheck = 2660;
+				TargetAttributes = {
+					A70000000000000000000001 = {
+						CreatedOnToolsVersion = 26.6;
+					};
+					A70000000000000000000002 = {
+						CreatedOnToolsVersion = 26.6;
+						TestTargetID = A70000000000000000000001;
+					};
+				};
+			};
+			buildConfigurationList = A80000000000000000000001 /* Build configuration list for PBXProject "Zhiheng" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = zh_CN;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+				zh_CN,
+			);
+			mainGroup = A50000000000000000000001;
+			packageReferences = (
+				C20000000000000000000001 /* XCRemoteSwiftPackageReference "CareKit" */,
+			);
+			productRefGroup = A50000000000000000000004 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				A70000000000000000000001 /* Zhiheng */,
+				A70000000000000000000002 /* ZhihengTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		A60000000000000000000002 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A1000000000000000000002C /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A60000000000000000000004 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		A60000000000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000000001 /* ZhihengApp.swift in Sources */,
+				A10000000000000000000002 /* RootTabView.swift in Sources */,
+				A10000000000000000000003 /* TodayView.swift in Sources */,
+				A1000000000000000000001E /* InsightsView.swift in Sources */,
+				A1000000000000000000001F /* HealthMetricDetailView.swift in Sources */,
+				A10000000000000000000004 /* AppReadiness.swift in Sources */,
+				A10000000000000000000006 /* HealthMetricSample.swift in Sources */,
+				A10000000000000000000007 /* HealthDataService.swift in Sources */,
+				A10000000000000000000009 /* CarePlanModels.swift in Sources */,
+				A1000000000000000000000A /* CarePlanService.swift in Sources */,
+				A1000000000000000000000C /* FeaturePlaceholderView.swift in Sources */,
+				A1000000000000000000000E /* AppContentState.swift in Sources */,
+				A1000000000000000000000F /* AppStatusView.swift in Sources */,
+				A10000000000000000000012 /* CareKitPlanStore.swift in Sources */,
+				A10000000000000000000014 /* HealthAccessExplanationView.swift in Sources */,
+				A10000000000000000000016 /* HealthKitAuthorizationService.swift in Sources */,
+				A10000000000000000000018 /* HealthKitDataService.swift in Sources */,
+				A1000000000000000000001A /* DemoHealthDataService.swift in Sources */,
+				A1000000000000000000001C /* HealthDataQuality.swift in Sources */,
+				A10000000000000000000020 /* HealthBaseline.swift in Sources */,
+				A10000000000000000000022 /* TodayDashboardModels.swift in Sources */,
+				A10000000000000000000024 /* TodayDashboardPresentation.swift in Sources */,
+				A10000000000000000000026 /* SystemActivityRingView.swift in Sources */,
+				A10000000000000000000027 /* InsightsDashboardPresentation.swift in Sources */,
+				A10000000000000000000029 /* HRVStatusFace.swift in Sources */,
+				A1000000000000000000002A /* HealthDataSession.swift in Sources */,
+				A1000000000000000000002D /* HealthAIModels.swift in Sources */,
+				A1000000000000000000002E /* AIService.swift in Sources */,
+				A1000000000000000000002F /* HealthFactPackBuilder.swift in Sources */,
+				A10000000000000000000030 /* HealthAISafetyRuleEngine.swift in Sources */,
+				A10000000000000000000031 /* OpenAIProxyService.swift in Sources */,
+				A10000000000000000000034 /* DeepSeekPersonalService.swift in Sources */,
+				A10000000000000000000035 /* AssistantConversationStore.swift in Sources */,
+				A10000000000000000000032 /* AssistantView.swift in Sources */,
+				A10000000000000000000036 /* MicroPlanView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A60000000000000000000003 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000000005 /* AppReadinessTests.swift in Sources */,
+				A10000000000000000000008 /* HealthMetricSampleTests.swift in Sources */,
+				A1000000000000000000000B /* CarePlanModelsTests.swift in Sources */,
+				A1000000000000000000000D /* NavigationModelTests.swift in Sources */,
+				A10000000000000000000010 /* AppContentStateTests.swift in Sources */,
+				A10000000000000000000013 /* CareKitPlanStoreTests.swift in Sources */,
+				A10000000000000000000015 /* HealthAccessExplanationTests.swift in Sources */,
+				A10000000000000000000017 /* HealthKitAuthorizationServiceTests.swift in Sources */,
+				A10000000000000000000019 /* HealthKitDataServiceTests.swift in Sources */,
+				A1000000000000000000001B /* DemoHealthDataServiceTests.swift in Sources */,
+				A1000000000000000000001D /* HealthDataQualityTests.swift in Sources */,
+				A10000000000000000000021 /* HealthBaselineTests.swift in Sources */,
+				A10000000000000000000023 /* TodayDashboardModelsTests.swift in Sources */,
+				A10000000000000000000025 /* TodayDashboardPresentationTests.swift in Sources */,
+				A10000000000000000000028 /* InsightsDashboardPresentationTests.swift in Sources */,
+				A1000000000000000000002B /* HealthDataSessionTests.swift in Sources */,
+				A10000000000000000000033 /* HealthAIFeatureTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		A30000000000000000000002 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A70000000000000000000001 /* Zhiheng */;
+			targetProxy = A30000000000000000000001 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		B10000000000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		B10000000000000000000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+			};
+			name = Release;
+		};
+		B10000000000000000000003 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = A20000000000000000000014 /* Base.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Zhiheng/Zhiheng.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "";
+				DEVELOPMENT_TEAM = DYN548U5S3;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "知衡";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "知衡仅在你授权后读取健康数据，用于个人趋势、主客观对照和低风险生活建议。";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.zhiheng.healthassistant.a21f7c9d;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		B10000000000000000000004 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = A20000000000000000000014 /* Base.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Zhiheng/Zhiheng.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = DYN548U5S3;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "知衡";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "知衡仅在你授权后读取健康数据，用于个人趋势、主客观对照和低风险生活建议。";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.zhiheng.healthassistant.a21f7c9d;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		B10000000000000000000005 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.zhiheng.healthassistant.a21f7c9d.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Zhiheng.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Zhiheng";
+			};
+			name = Debug;
+		};
+		B10000000000000000000006 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.zhiheng.healthassistant.a21f7c9d.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Zhiheng.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Zhiheng";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		A80000000000000000000001 /* Build configuration list for PBXProject "Zhiheng" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B10000000000000000000001 /* Debug */,
+				B10000000000000000000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A80000000000000000000002 /* Build configuration list for PBXNativeTarget "Zhiheng" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B10000000000000000000003 /* Debug */,
+				B10000000000000000000004 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A80000000000000000000003 /* Build configuration list for PBXNativeTarget "ZhihengTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B10000000000000000000005 /* Debug */,
+				B10000000000000000000006 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		C20000000000000000000001 /* XCRemoteSwiftPackageReference "CareKit" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/carekit-apple/CareKit.git";
+			requirement = {
+				kind = exactVersion;
+				version = 4.1.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		C10000000000000000000001 /* CareKitStore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C20000000000000000000001 /* XCRemoteSwiftPackageReference "CareKit" */;
+			productName = CareKitStore;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = A90000000000000000000001 /* Project object */;
+}

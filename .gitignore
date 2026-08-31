@@ -1,0 +1,29 @@
+# macOS
+.DS_Store
+
+# Xcode user state and build outputs
+DerivedData/
+build/
+*.xcuserstate
+xcuserdata/
+
+# Swift Package Manager build outputs
+.build/
+
+# Python build/cache outputs
+__pycache__/
+*.py[cod]
+
+# Local secrets and environment overrides
+.env
+.env.*
+!.env.example
+Secrets.xcconfig
+*.p8
+*.p12
+*.mobileprovision
+
+# Local health and demo data must never enter source control
+HealthData/
+PrivateDemoData/
+*.health-export.zip
