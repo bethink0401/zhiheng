@@ -12,11 +12,15 @@ actor CareKitPlanStore: CarePlanService {
         static let scheduledMinute = "zhiheng.scheduledMinute"
         static let templateID = "zhiheng.templateID"
         static let endedAt = "zhiheng.endedAt"
+        static let pausedAt = "zhiheng.pausedAt"
+        static let pauseScheduleStart = "zhiheng.pauseScheduleStart"
+        static let pauseIntervals = "zhiheng.pauseIntervals"
     }
 
     private enum OutcomeKind {
         static let state = "zhiheng.outcome.state"
         static let difficulty = "zhiheng.outcome.difficulty"
+        static let feedback = "zhiheng.outcome.feedback"
     }
 
     private let store: OCKStore
@@ -64,13 +68,7 @@ actor CareKitPlanStore: CarePlanService {
             let storedPlan = try await store.addCarePlan(plan)
 
             do {
-                let schedule = OCKSchedule.dailyAtTime(
-                    hour: draft.scheduledTime.hour,
-                    minutes: draft.scheduledTime.minute,
-                    start: draft.startDate,
-                    end: draft.endDateExclusive,
-                    text: draft.taskTitle
-                )
+                let schedule = try schedule(for: draft, excluding: [])
                 let task = OCKTask(
                     id: draft.taskID.rawValue,
                     title: draft.taskTitle,
@@ -99,7 +97,10 @@ actor CareKitPlanStore: CarePlanService {
 
             for storedPlan in plans {
                 let plan = try decode(storedPlan)
-                guard plan.status == .active, Date() < plan.draft.endDateExclusive else {
+                guard plan.status == .active || plan.status == .paused else {
+                    continue
+                }
+                guard plan.status == .paused || Date() < plan.draft.endDateExclusive else {
                     continue
                 }
                 _ = try await task(with: plan.draft.taskID)
@@ -151,7 +152,11 @@ actor CareKitPlanStore: CarePlanService {
             let storedTask = try await task(with: input.taskID)
             let storedPlan = try await carePlan(containing: storedTask)
             let plan = try decode(storedPlan)
-            let outcomes = try await outcomes(for: input.taskID)
+            let outcomes = try await storedOutcomes(for: input.taskID)
+
+            guard plan.status == .active else {
+                throw CarePlanServiceError.outcomeConflict
+            }
 
             guard !outcomes.contains(where: {
                 $0.taskOccurrenceIndex == input.occurrenceIndex
@@ -163,7 +168,8 @@ actor CareKitPlanStore: CarePlanService {
                 let event = storedTask.schedule.event(
                     forOccurrenceIndex: input.occurrenceIndex
                 ),
-                event.start < effectiveQueryEnd(for: storedPlan, draft: plan.draft)
+                event.start < effectiveQueryEnd(for: storedPlan, draft: plan.draft),
+                Calendar.current.isDate(event.start, inSameDayAs: input.recordedAt)
             else {
                 throw CarePlanServiceError.outcomeConflict
             }
@@ -178,6 +184,12 @@ actor CareKitPlanStore: CarePlanService {
                 difficultyValue.kind = OutcomeKind.difficulty
                 difficultyValue.createdDate = input.recordedAt
                 values.append(difficultyValue)
+            }
+            if let feedback = input.feedback {
+                var feedbackValue = OCKOutcomeValue(feedback)
+                feedbackValue.kind = OutcomeKind.feedback
+                feedbackValue.createdDate = input.recordedAt
+                values.append(feedbackValue)
             }
 
             var outcome = OCKOutcome(
@@ -200,7 +212,7 @@ actor CareKitPlanStore: CarePlanService {
             let plan = try decode(storedPlan)
             let storedTask = try await task(with: plan.draft.taskID)
             let queryEnd = effectiveQueryEnd(for: storedPlan, draft: plan.draft)
-            let storedOutcomes = try await outcomes(for: plan.draft.taskID)
+            let storedOutcomes = try await storedOutcomes(for: plan.draft.taskID)
 
             let scheduledThroughQueryEnd: Int
             if queryEnd > plan.draft.startDate {
@@ -253,7 +265,7 @@ actor CareKitPlanStore: CarePlanService {
         occurrenceIndex: Int
     ) async throws -> PlanOutcomeState? {
         do {
-            let matchingOutcomes = try await outcomes(for: taskID).filter {
+            let matchingOutcomes = try await storedOutcomes(for: taskID).filter {
                 $0.taskOccurrenceIndex == occurrenceIndex
             }
             guard matchingOutcomes.count <= 1 else {
@@ -274,31 +286,205 @@ actor CareKitPlanStore: CarePlanService {
         }
     }
 
+    func outcomeRecords(for taskID: CareTaskID) async throws -> [PlanOutcomeRecord] {
+        do {
+            let outcomes = try await storedOutcomes(for: taskID)
+            var records = [PlanOutcomeRecord]()
+            for outcome in outcomes {
+                guard let rawState = outcome.values.first(where: {
+                    $0.kind == OutcomeKind.state
+                })?.stringValue,
+                let state = PlanOutcomeState(rawValue: rawState) else {
+                    throw CarePlanServiceError.persistenceFailed
+                }
+                let feedback = outcome.values.first(where: {
+                    $0.kind == OutcomeKind.feedback
+                })?.stringValue
+                let normalizedFeedback = try PlanOutcomeInput(
+                    taskID: taskID,
+                    occurrenceIndex: outcome.taskOccurrenceIndex,
+                    state: state,
+                    recordedAt: outcome.effectiveDate,
+                    difficulty: nil,
+                    feedback: feedback
+                ).feedback
+                records.append(PlanOutcomeRecord(
+                    occurrenceIndex: outcome.taskOccurrenceIndex,
+                    state: state,
+                    recordedAt: outcome.effectiveDate,
+                    feedback: normalizedFeedback
+                ))
+            }
+            guard Set(records.map(\.occurrenceIndex)).count == records.count else {
+                throw CarePlanServiceError.outcomeConflict
+            }
+            return records.sorted { $0.occurrenceIndex < $1.occurrenceIndex }
+        } catch let error as CarePlanServiceError {
+            throw error
+        } catch {
+            throw CarePlanServiceError.persistenceFailed
+        }
+    }
+
+    func occurrenceIndex(
+        for taskID: CareTaskID,
+        on date: Date
+    ) async throws -> Int? {
+        do {
+            let storedTask = try await task(with: taskID)
+            let dayStart = Calendar.current.startOfDay(for: date)
+            guard let nextDay = Calendar.current.date(
+                byAdding: .day,
+                value: 1,
+                to: dayStart
+            ) else {
+                throw CarePlanServiceError.persistenceFailed
+            }
+            return storedTask.schedule.events(from: dayStart, to: nextDay)
+                .first(where: { $0.start >= dayStart && $0.start < nextDay })?
+                .occurrence
+        } catch let error as CarePlanServiceError {
+            throw error
+        } catch {
+            throw CarePlanServiceError.persistenceFailed
+        }
+    }
+
+    func pausePlan(_ planID: CarePlanID, at date: Date) async throws {
+        do {
+            let storedPlan = try await carePlan(with: planID)
+            let currentPlan = try decode(storedPlan)
+            guard currentPlan.status == .active,
+                  date >= currentPlan.draft.startDate,
+                  date < currentPlan.draft.endDateExclusive else {
+                throw CarePlanServiceError.invalidPlanState
+            }
+
+            let storedTask = try await task(with: currentPlan.draft.taskID)
+            let dayStart = Calendar.current.startOfDay(for: date)
+            let eventsToday = storedTask.schedule.events(
+                from: dayStart,
+                to: Calendar.current.date(byAdding: .day, value: 1, to: dayStart)
+                    ?? currentPlan.draft.endDateExclusive
+            )
+            let outcomes = try await storedOutcomes(for: currentPlan.draft.taskID)
+            let hasRecordedToday = eventsToday.contains { event in
+                outcomes.contains(where: {
+                    $0.taskOccurrenceIndex == event.occurrence
+                })
+            }
+            let pauseScheduleStart = hasRecordedToday
+                ? (Calendar.current.date(byAdding: .day, value: 1, to: dayStart) ?? dayStart)
+                : dayStart
+
+            var metadata = storedPlan.userInfo ?? [:]
+            metadata[MetadataKey.status] = MicroPlanStatus.paused.rawValue
+            metadata[MetadataKey.pausedAt] = encode(date)
+            metadata[MetadataKey.pauseScheduleStart] = encode(pauseScheduleStart)
+            try await updatePlan(storedPlan, metadata: metadata)
+        } catch let error as CarePlanServiceError {
+            throw error
+        } catch {
+            throw CarePlanServiceError.persistenceFailed
+        }
+    }
+
+    func resumePlan(_ planID: CarePlanID, at date: Date) async throws {
+        do {
+            let storedPlan = try await carePlan(with: planID)
+            let currentPlan = try decode(storedPlan)
+            guard currentPlan.status == .paused,
+                  let pausedAt = decode(storedPlan.userInfo?[MetadataKey.pausedAt]) else {
+                throw CarePlanServiceError.invalidPlanState
+            }
+            let pauseScheduleStart = decode(
+                storedPlan.userInfo?[MetadataKey.pauseScheduleStart]
+            ) ?? Calendar.current.startOfDay(for: pausedAt)
+
+            let resumeDay = Calendar.current.startOfDay(for: date)
+            guard date >= pausedAt else {
+                throw CarePlanServiceError.invalidPlanState
+            }
+
+            var pauseIntervals = try decodedPauseIntervals(
+                storedPlan.userInfo?[MetadataKey.pauseIntervals]
+            )
+            var resumedDraft = currentPlan.draft
+            if resumeDay > pauseScheduleStart {
+                pauseIntervals.append(DateInterval(
+                    start: pauseScheduleStart,
+                    end: resumeDay
+                ))
+                guard let pausedDays = Calendar.current.dateComponents(
+                    [.day],
+                    from: pauseScheduleStart,
+                    to: resumeDay
+                ).day,
+                let extendedEnd = Calendar.current.date(
+                    byAdding: .day,
+                    value: pausedDays,
+                    to: currentPlan.draft.endDateExclusive
+                ) else {
+                    throw CarePlanServiceError.persistenceFailed
+                }
+                resumedDraft = MicroPlanDraft(
+                    id: currentPlan.draft.id,
+                    title: currentPlan.draft.title,
+                    taskID: currentPlan.draft.taskID,
+                    taskTitle: currentPlan.draft.taskTitle,
+                    startDate: currentPlan.draft.startDate,
+                    endDateExclusive: extendedEnd,
+                    scheduledTime: currentPlan.draft.scheduledTime,
+                    templateID: currentPlan.draft.templateID
+                )
+
+                let storedTask = try await task(with: resumedDraft.taskID)
+                var updatedTask = OCKTask(
+                    id: storedTask.id,
+                    title: storedTask.title,
+                    carePlanUUID: storedTask.carePlanUUID,
+                    schedule: try schedule(
+                        for: resumedDraft,
+                        excluding: pauseIntervals
+                    )
+                )
+                updatedTask.effectiveDate = Date()
+                _ = try await store.updateTask(updatedTask)
+            }
+
+            var metadata = storedPlan.userInfo ?? [:]
+            metadata[MetadataKey.status] = MicroPlanStatus.active.rawValue
+            metadata[MetadataKey.endDateExclusive] = encode(resumedDraft.endDateExclusive)
+            metadata[MetadataKey.pauseIntervals] = try encodedPauseIntervals(pauseIntervals)
+            metadata.removeValue(forKey: MetadataKey.pausedAt)
+            metadata.removeValue(forKey: MetadataKey.pauseScheduleStart)
+            try await updatePlan(storedPlan, metadata: metadata)
+        } catch let error as CarePlanServiceError {
+            throw error
+        } catch {
+            throw CarePlanServiceError.persistenceFailed
+        }
+    }
+
     func endPlan(_ planID: CarePlanID, at date: Date) async throws {
         do {
             let storedPlan = try await carePlan(with: planID)
             let currentPlan = try decode(storedPlan)
-            guard date >= currentPlan.draft.startDate else {
-                throw CarePlanServiceError.persistenceFailed
+            guard currentPlan.status == .active || currentPlan.status == .paused,
+                  date >= currentPlan.draft.startDate else {
+                throw CarePlanServiceError.invalidPlanState
             }
 
             let status: MicroPlanStatus = date < currentPlan.draft.endDateExclusive
                 ? .endedEarly
                 : .completed
 
-            var updatedPlan = OCKCarePlan(
-                id: storedPlan.id,
-                title: storedPlan.title,
-                patientUUID: storedPlan.patientUUID
-            )
-            // CareKit version time describes when this mutation becomes current.
-            // The user's actual stop time is stored separately in `endedAt`.
-            updatedPlan.effectiveDate = Date()
             var updatedMetadata = storedPlan.userInfo ?? [:]
             updatedMetadata[MetadataKey.status] = status.rawValue
             updatedMetadata[MetadataKey.endedAt] = encode(date)
-            updatedPlan.userInfo = updatedMetadata
-            _ = try await store.updateCarePlan(updatedPlan)
+            updatedMetadata.removeValue(forKey: MetadataKey.pausedAt)
+            updatedMetadata.removeValue(forKey: MetadataKey.pauseScheduleStart)
+            try await updatePlan(storedPlan, metadata: updatedMetadata)
         } catch let error as CarePlanServiceError {
             throw error
         } catch {
@@ -340,7 +526,7 @@ actor CareKitPlanStore: CarePlanService {
         return try await carePlan(with: CarePlanID(rawValue: referencedVersion.id))
     }
 
-    private func outcomes(for taskID: CareTaskID) async throws -> [OCKOutcome] {
+    private func storedOutcomes(for taskID: CareTaskID) async throws -> [OCKOutcome] {
         var query = OCKOutcomeQuery(dateInterval: latestVersionInterval)
         query.taskIDs = [taskID.rawValue]
         return try await store.fetchOutcomes(query: query)
@@ -410,6 +596,69 @@ actor CareKitPlanStore: CarePlanService {
             return draft.endDateExclusive
         }
         return min(endedAt, draft.endDateExclusive)
+    }
+
+    private func updatePlan(
+        _ storedPlan: OCKCarePlan,
+        metadata: [String: String]
+    ) async throws {
+        var updatedPlan = OCKCarePlan(
+            id: storedPlan.id,
+            title: storedPlan.title,
+            patientUUID: storedPlan.patientUUID
+        )
+        // CareKit uses effective dates to retain the complete mutation history.
+        updatedPlan.effectiveDate = Date()
+        updatedPlan.userInfo = metadata
+        _ = try await store.updateCarePlan(updatedPlan)
+    }
+
+    private func schedule(
+        for draft: MicroPlanDraft,
+        excluding pauseIntervals: [DateInterval]
+    ) throws -> OCKSchedule {
+        var dailySchedules = [OCKSchedule]()
+        var day = Calendar.current.startOfDay(for: draft.startDate)
+        while day < draft.endDateExclusive {
+            guard let nextDay = Calendar.current.date(
+                byAdding: .day,
+                value: 1,
+                to: day
+            ) else {
+                throw CarePlanServiceError.persistenceFailed
+            }
+            let isPausedDay = pauseIntervals.contains { interval in
+                day >= interval.start && day < interval.end
+            }
+            if !isPausedDay {
+                dailySchedules.append(.dailyAtTime(
+                    hour: draft.scheduledTime.hour,
+                    minutes: draft.scheduledTime.minute,
+                    start: day,
+                    end: nextDay,
+                    text: draft.taskTitle
+                ))
+            }
+            day = nextDay
+        }
+        guard !dailySchedules.isEmpty else {
+            throw CarePlanServiceError.persistenceFailed
+        }
+        return OCKSchedule(composing: dailySchedules)
+    }
+
+    private func encodedPauseIntervals(
+        _ intervals: [DateInterval]
+    ) throws -> String {
+        try JSONEncoder().encode(intervals).base64EncodedString()
+    }
+
+    private func decodedPauseIntervals(_ value: String?) throws -> [DateInterval] {
+        guard let value else { return [] }
+        guard let data = Data(base64Encoded: value) else {
+            throw CarePlanServiceError.persistenceFailed
+        }
+        return try JSONDecoder().decode([DateInterval].self, from: data)
     }
 
     private func encode(_ date: Date) -> String {

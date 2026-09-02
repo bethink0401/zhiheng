@@ -50,6 +50,24 @@ ALLOWED_PLAN_IDS = [
     "consistentWakeTime",
     "gentleMobility",
 ]
+ALLOWED_PLAN_STATUSES = ["completed", "endedEarly"]
+ALLOWED_EVALUATION_VERDICTS = [
+    "mayHaveHelped",
+    "noClearChange",
+    "insufficientExecution",
+    "insufficientData",
+    "subjectiveObjectiveMismatch",
+]
+ALLOWED_TREND_METRICS = [
+    "sleepOnset",
+    "sleepDuration",
+    "stepCount",
+    "activeEnergy",
+    "standHours",
+    "exerciseDuration",
+    "heartRateVariability",
+    "walkingRunningDistance",
+]
 
 
 def response_schema() -> dict[str, Any]:
@@ -129,11 +147,61 @@ def validate_client_request(payload: Any) -> dict[str, Any]:
         raise ValueError("factPack is missing")
     if not isinstance(conversation, list) or len(conversation) > 10:
         raise ValueError("recentConversation is invalid")
-    return {
+    validated = {
         "question": question.strip(),
         "factPack": fact_pack,
         "recentConversation": conversation,
     }
+    plan_evaluation = payload.get("planEvaluation")
+    if plan_evaluation is not None:
+        validated["planEvaluation"] = validate_plan_evaluation(plan_evaluation)
+    return validated
+
+
+def validate_plan_evaluation(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise ValueError("planEvaluation is invalid")
+    required = {
+        "planID", "planTitle", "taskTitle", "status", "scheduledCount",
+        "completedCount", "skippedCount", "completionRate", "userFeedback",
+        "metrics", "dataQualitySummary", "localVerdict",
+    }
+    if set(value) != required:
+        raise ValueError("planEvaluation fields are invalid")
+    for key, limit in (("planID", 160), ("planTitle", 80), ("taskTitle", 160),
+                       ("dataQualitySummary", 160)):
+        if not isinstance(value[key], str) or not value[key] or len(value[key]) > limit:
+            raise ValueError(f"planEvaluation {key} is invalid")
+    if value["status"] not in ALLOWED_PLAN_STATUSES:
+        raise ValueError("planEvaluation status is invalid")
+    counts = [value[key] for key in ("scheduledCount", "completedCount", "skippedCount")]
+    if not all(isinstance(item, int) and 0 <= item <= 31 for item in counts):
+        raise ValueError("planEvaluation counts are invalid")
+    rate = value["completionRate"]
+    if rate is not None and (not isinstance(rate, (int, float)) or not 0 <= rate <= 1):
+        raise ValueError("planEvaluation completionRate is invalid")
+    feedback = value["userFeedback"]
+    if (not isinstance(feedback, list) or len(feedback) > 7
+            or not all(isinstance(item, str) and 0 < len(item) <= 160 for item in feedback)):
+        raise ValueError("planEvaluation userFeedback is invalid")
+    metrics = value["metrics"]
+    if not isinstance(metrics, list) or len(metrics) > 8:
+        raise ValueError("planEvaluation metrics are invalid")
+    for metric in metrics:
+        if (not isinstance(metric, dict)
+                or metric.get("metric") not in ALLOWED_TREND_METRICS
+                or metric.get("healthMetric") not in ALLOWED_METRICS + [None]
+                or metric.get("direction") not in {"favorable", "neutral", "unfavorable"}):
+            raise ValueError("planEvaluation metric is invalid")
+        for key in ("beforeMedian", "planMedian", "changeFromBefore"):
+            if not isinstance(metric.get(key), (int, float)):
+                raise ValueError("planEvaluation metric value is invalid")
+        for key in ("beforeValidDayCount", "planValidDayCount"):
+            if not isinstance(metric.get(key), int) or not 0 <= metric[key] <= 31:
+                raise ValueError("planEvaluation metric day count is invalid")
+    if value["localVerdict"] not in ALLOWED_EVALUATION_VERDICTS:
+        raise ValueError("planEvaluation localVerdict is invalid")
+    return value
 
 
 def build_deepseek_request(
@@ -167,6 +235,11 @@ def build_deepseek_request(
         "需要清楚说明比较依据和局限。possibleFactors 只能表达可能性，不得写成因果；"
         "如有必要，只提出一个追问。usedMetrics 只能列出回答实际使用且"
         "事实包中可用的指标。必须输出 JSON；uncertainty 必须是单个字符串，不能是数组。"
+        "当输入包含 planEvaluation 时，这是计划结束评估。只使用其中由本地程序计算的完成率、"
+        "用户反馈、指标对照和数据质量；用户反馈是主观感受，不能当作客观事实。summary 必须以"
+        "‘可能有帮助’‘暂未观察到明显变化’‘执行不足，无法判断’‘数据不足，建议继续观察’"
+        "或‘主观和客观结果不同步’之一为核心判断，并说明是否值得继续。不得把相关变化写成计划造成的结果。"
+        "此时 suggestedAction 和 followUpQuestion 必须为 null，不得提出新的微计划。"
         "输出示例：{\"summary\":\"直接、自然的完整回答\",\"supportiveClosing\":\"具体而自然的鼓励\",\"observedFacts\":[],"
         "\"possibleFactors\":[],\"uncertainty\":\"数据限制\","
         "\"followUpQuestion\":null,\"suggestedAction\":null,"

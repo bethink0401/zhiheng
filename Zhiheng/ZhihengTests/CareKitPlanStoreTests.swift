@@ -1,4 +1,5 @@
 import CareKitStore
+import SwiftData
 import XCTest
 @testable import Zhiheng
 
@@ -6,7 +7,11 @@ final class CareKitPlanStoreTests: XCTestCase {
     @MainActor
     func testAIPlanCandidateStartsRecordsTodayAndEndsThroughSharedSession() async throws {
         let service = CareKitPlanStore(inMemoryStoreNamed: UUID().uuidString)
-        let session = MicroPlanSession(service: service)
+        let baselineStore = InMemoryPlanBaselineStore()
+        let session = MicroPlanSession(
+            service: service,
+            baselineStore: baselineStore
+        )
         let referenceDate = Date()
         let action = HealthAISuggestedAction(
             templateID: .earlierBedtime,
@@ -19,8 +24,12 @@ final class CareKitPlanStoreTests: XCTestCase {
         )
         XCTAssertTrue(didStart)
         XCTAssertEqual(session.activePlan?.draft.title, "提前上床")
+        XCTAssertEqual(
+            session.baselineSnapshot?.carePlanID,
+            session.activePlan?.draft.id
+        )
+        XCTAssertEqual(session.baselineSnapshot?.dataMode, .live)
         XCTAssertEqual(session.progress?.scheduledCount, 5)
-
         await session.recordToday(.completed, referenceDate: referenceDate)
         XCTAssertEqual(session.todayOutcomeState, .completed)
         XCTAssertEqual(session.progress?.completedCount, 1)
@@ -34,6 +43,76 @@ final class CareKitPlanStoreTests: XCTestCase {
         XCTAssertEqual(session.history.first?.progress.completedCount, 1)
     }
 
+    @MainActor
+    func testSwiftDataBaselineStoreRoundTripsVersionedSnapshot() throws {
+        let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
+        let container = try ModelContainer(
+            for: PlanAnalysisMetadataEntity.self,
+            configurations: configuration
+        )
+        let planID = CarePlanID(rawValue: "microplan.baseline.roundtrip")
+        let capturedAt = Date(timeIntervalSince1970: 1_800_000_000)
+        let snapshot = MicroPlanBaselineSnapshot(
+            carePlanID: planID,
+            planStartDate: capturedAt,
+            capturedAt: capturedAt,
+            dataMode: .demo,
+            metrics: [MicroPlanBaselineMetricSnapshot(
+                metric: .stepCount,
+                median: 6_500,
+                validDayCount: 5
+            )],
+            schemaVersion: MicroPlanBaselineSnapshot.currentSchemaVersion
+        )
+        let writer = SwiftDataPlanBaselineStore(modelContainer: container)
+        try writer.save(snapshot)
+
+        let reader = SwiftDataPlanBaselineStore(modelContainer: container)
+        XCTAssertEqual(try reader.baseline(for: planID), snapshot)
+        try reader.delete(for: planID)
+        XCTAssertNil(try reader.baseline(for: planID))
+    }
+
+    @MainActor
+    func testBaselinePersistenceFailurePreventsCareKitPlanCreation() async throws {
+        let service = CareKitPlanStore(inMemoryStoreNamed: UUID().uuidString)
+        let session = MicroPlanSession(
+            service: service,
+            baselineStore: FailingPlanBaselineStore()
+        )
+
+        let didStart = await session.start(from: HealthAISuggestedAction(
+            templateID: .afternoonWalk,
+            rationale: "测试基线失败"
+        ))
+
+        XCTAssertFalse(didStart)
+        let activePlan = try await service.activePlan()
+        XCTAssertNil(activePlan)
+        XCTAssertTrue(session.showsError)
+    }
+
+    @MainActor
+    func testCareKitCreationFailureRollsBackNewBaselineSnapshot() async throws {
+        let service = CareKitPlanStore(inMemoryStoreNamed: UUID().uuidString)
+        _ = try await service.createPlan(from: makeDraft())
+        let baselineStore = TrackingPlanBaselineStore()
+        let session = MicroPlanSession(
+            service: service,
+            baselineStore: baselineStore
+        )
+
+        let didStart = await session.start(from: HealthAISuggestedAction(
+            templateID: .afternoonWalk,
+            rationale: "测试 CareKit 创建失败回滚"
+        ))
+
+        XCTAssertFalse(didStart)
+        XCTAssertEqual(baselineStore.savedPlanIDs.count, 1)
+        XCTAssertEqual(baselineStore.deletedPlanIDs, baselineStore.savedPlanIDs)
+        XCTAssertTrue(baselineStore.snapshots.isEmpty)
+    }
+
     func testRejectsStartingASecondPlanWhileOneIsActive() async throws {
         let service = CareKitPlanStore(inMemoryStoreNamed: UUID().uuidString)
         _ = try await service.createPlan(from: makeDraft())
@@ -44,6 +123,101 @@ final class CareKitPlanStoreTests: XCTestCase {
         } catch let error as CarePlanServiceError {
             XCTAssertEqual(error, .activePlanExists)
         }
+    }
+
+    func testPauseAndResumeSkipPausedDaysAndPreserveOutcomeIndexes() async throws {
+        let service = CareKitPlanStore(inMemoryStoreNamed: UUID().uuidString)
+        let draft = try makeDraft()
+        _ = try await service.createPlan(from: draft)
+        let pauseDate = draft.startDate.addingTimeInterval(10 * 60 * 60)
+        let resumeDate = try XCTUnwrap(
+            Calendar.current.date(byAdding: .day, value: 2, to: pauseDate)
+        )
+
+        try await service.pausePlan(draft.id, at: pauseDate)
+
+        let loadedPausedPlan = try await service.activePlan()
+        let pausedPlan = try XCTUnwrap(loadedPausedPlan)
+        XCTAssertEqual(pausedPlan.status, .paused)
+        do {
+            try await service.recordOutcome(PlanOutcomeInput(
+                taskID: draft.taskID,
+                occurrenceIndex: 0,
+                state: .completed,
+                recordedAt: pauseDate,
+                difficulty: nil
+            ))
+            XCTFail("Expected paused plans to reject outcomes")
+        } catch let error as CarePlanServiceError {
+            XCTAssertEqual(error, .outcomeConflict)
+        }
+
+        try await service.resumePlan(draft.id, at: resumeDate)
+
+        let loadedResumedPlan = try await service.activePlan()
+        let resumedPlan = try XCTUnwrap(loadedResumedPlan)
+        XCTAssertEqual(resumedPlan.status, .active)
+        XCTAssertEqual(
+            Calendar.current.dateComponents(
+                [.day],
+                from: draft.endDateExclusive,
+                to: resumedPlan.draft.endDateExclusive
+            ).day,
+            2
+        )
+        let pausedDay = try XCTUnwrap(
+            Calendar.current.date(byAdding: .day, value: 1, to: draft.startDate)
+        )
+        let pausedOccurrence = try await service.occurrenceIndex(
+            for: draft.taskID,
+            on: pausedDay
+        )
+        let resumedOccurrence = try await service.occurrenceIndex(
+            for: draft.taskID,
+            on: resumeDate
+        )
+        XCTAssertNil(pausedOccurrence)
+        XCTAssertEqual(resumedOccurrence, 0)
+
+        try await service.recordOutcome(PlanOutcomeInput(
+            taskID: draft.taskID,
+            occurrenceIndex: 0,
+            state: .completed,
+            recordedAt: resumeDate,
+            difficulty: nil
+        ))
+        let progress = try await service.progress(for: draft.id)
+        XCTAssertEqual(progress.scheduledCount, 3)
+        XCTAssertEqual(progress.completedCount, 1)
+    }
+
+    func testCompletedDayCanPauseAndResumeWithoutExtendingThePlan() async throws {
+        let service = CareKitPlanStore(inMemoryStoreNamed: UUID().uuidString)
+        let draft = try makeDraft()
+        _ = try await service.createPlan(from: draft)
+        let completedAt = draft.startDate.addingTimeInterval(9 * 60 * 60)
+        try await service.recordOutcome(PlanOutcomeInput(
+            taskID: draft.taskID,
+            occurrenceIndex: 0,
+            state: .completed,
+            recordedAt: completedAt,
+            difficulty: nil
+        ))
+        let pausedAt = draft.startDate.addingTimeInterval(10 * 60 * 60)
+        let resumedAt = draft.startDate.addingTimeInterval(11 * 60 * 60)
+
+        try await service.pausePlan(draft.id, at: pausedAt)
+        try await service.resumePlan(draft.id, at: resumedAt)
+
+        let loadedResumed = try await service.activePlan()
+        let resumed = try XCTUnwrap(loadedResumed)
+        XCTAssertEqual(resumed.status, .active)
+        XCTAssertEqual(resumed.draft.endDateExclusive, draft.endDateExclusive)
+        let outcomeState = try await service.outcomeState(
+            for: draft.taskID,
+            occurrenceIndex: 0
+        )
+        XCTAssertEqual(outcomeState, .completed)
     }
 
     func testCreatesAndReadsActivePlanWithoutLeakingCareKitTypes() async throws {
@@ -119,6 +293,30 @@ final class CareKitPlanStoreTests: XCTestCase {
         XCTAssertEqual(firstState, .completed)
         XCTAssertEqual(secondState, .skipped)
         XCTAssertNil(thirdState)
+    }
+
+    func testOptionalFeedbackIsStoredWithOutcomeAndReadBack() async throws {
+        let service = CareKitPlanStore(inMemoryStoreNamed: UUID().uuidString)
+        let draft = try makeDraft()
+        _ = try await service.createPlan(from: draft)
+        let recordedAt = draft.startDate.addingTimeInterval(10 * 60 * 60)
+
+        try await service.recordOutcome(PlanOutcomeInput(
+            taskID: draft.taskID,
+            occurrenceIndex: 0,
+            state: .completed,
+            recordedAt: recordedAt,
+            difficulty: nil,
+            feedback: "  比昨天更容易开始，结束后感觉轻松。  "
+        ))
+
+        let records = try await service.outcomeRecords(for: draft.taskID)
+        XCTAssertEqual(records, [PlanOutcomeRecord(
+            occurrenceIndex: 0,
+            state: .completed,
+            recordedAt: recordedAt,
+            feedback: "比昨天更容易开始，结束后感觉轻松。"
+        )])
     }
 
     func testRejectsASecondOutcomeForTheSameOccurrence() async throws {
@@ -219,7 +417,8 @@ final class CareKitPlanStoreTests: XCTestCase {
                 occurrenceIndex: 0,
                 state: .completed,
                 recordedAt: draft.startDate.addingTimeInterval(10 * 60 * 60),
-                difficulty: 2
+                difficulty: 2,
+                feedback: "完成后感觉比较平稳"
             )
         )
         let secondDayStart = try XCTUnwrap(
@@ -232,10 +431,12 @@ final class CareKitPlanStoreTests: XCTestCase {
 
         let activePlan = try await reader?.activePlan()
         let progress = try await reader?.progress(for: draft.id)
+        let outcomes = try await reader?.outcomeRecords(for: draft.taskID)
         XCTAssertNil(activePlan)
         XCTAssertEqual(progress?.scheduledCount, 1)
         XCTAssertEqual(progress?.completedCount, 1)
         XCTAssertEqual(progress?.skippedCount, 0)
+        XCTAssertEqual(outcomes?.first?.feedback, "完成后感觉比较平稳")
 
         writer = nil
         reader = nil
@@ -260,5 +461,39 @@ final class CareKitPlanStoreTests: XCTestCase {
             endDateExclusive: end,
             scheduledTime: try ScheduledLocalTime(hour: 22, minute: 30)
         )
+    }
+}
+
+@MainActor
+private final class FailingPlanBaselineStore: PlanBaselineStore {
+    func save(_ snapshot: MicroPlanBaselineSnapshot) throws {
+        throw PlanBaselineStoreError.persistenceFailed
+    }
+
+    func baseline(for carePlanID: CarePlanID) throws -> MicroPlanBaselineSnapshot? {
+        nil
+    }
+
+    func delete(for carePlanID: CarePlanID) throws {}
+}
+
+@MainActor
+private final class TrackingPlanBaselineStore: PlanBaselineStore {
+    private(set) var snapshots = [CarePlanID: MicroPlanBaselineSnapshot]()
+    private(set) var savedPlanIDs = [CarePlanID]()
+    private(set) var deletedPlanIDs = [CarePlanID]()
+
+    func save(_ snapshot: MicroPlanBaselineSnapshot) throws {
+        savedPlanIDs.append(snapshot.carePlanID)
+        snapshots[snapshot.carePlanID] = snapshot
+    }
+
+    func baseline(for carePlanID: CarePlanID) throws -> MicroPlanBaselineSnapshot? {
+        snapshots[carePlanID]
+    }
+
+    func delete(for carePlanID: CarePlanID) throws {
+        deletedPlanIDs.append(carePlanID)
+        snapshots[carePlanID] = nil
     }
 }

@@ -524,7 +524,11 @@ struct AssistantView: View {
                             isBusy: planSession.isBusy
                         ) {
                             Task { @MainActor in
-                                if await planSession.start(from: action) {
+                                if await planSession.start(
+                                    from: action,
+                                    healthSnapshot: healthSession.snapshot,
+                                    dataMode: healthSession.dataMode
+                                ) {
                                     isComposerFocused = false
                                     onPlanStarted()
                                 }

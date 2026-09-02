@@ -61,6 +61,7 @@
 		A10000000000000000000034 /* DeepSeekPersonalService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000039 /* DeepSeekPersonalService.swift */; };
 		A10000000000000000000035 /* AssistantConversationStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000003A /* AssistantConversationStore.swift */; };
 		A10000000000000000000036 /* MicroPlanView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000003B /* MicroPlanView.swift */; };
+		A10000000000000000000037 /* PlanAnalysisMetadataStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000003C /* PlanAnalysisMetadataStore.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -133,6 +134,7 @@
 		A20000000000000000000039 /* DeepSeekPersonalService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeepSeekPersonalService.swift; sourceTree = "<group>"; };
 		A2000000000000000000003A /* AssistantConversationStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantConversationStore.swift; sourceTree = "<group>"; };
 		A2000000000000000000003B /* MicroPlanView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MicroPlanView.swift; sourceTree = "<group>"; };
+		A2000000000000000000003C /* PlanAnalysisMetadataStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlanAnalysisMetadataStore.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -286,6 +288,7 @@
 		A5000000000000000000000B /* Infrastructure */ = {
 			isa = PBXGroup;
 			children = (
+				A2000000000000000000003C /* PlanAnalysisMetadataStore.swift */,
 				A5000000000000000000000C /* CareKit */,
 				A5000000000000000000000E /* HealthKit */,
 				A5000000000000000000000F /* Demo */,
@@ -528,6 +531,7 @@
 				A10000000000000000000035 /* AssistantConversationStore.swift in Sources */,
 				A10000000000000000000032 /* AssistantView.swift in Sources */,
 				A10000000000000000000036 /* MicroPlanView.swift in Sources */,
+				A10000000000000000000037 /* PlanAnalysisMetadataStore.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

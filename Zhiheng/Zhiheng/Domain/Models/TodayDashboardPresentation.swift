@@ -93,6 +93,13 @@ struct TodayNightSummary: Equatable, Sendable {
     let availableVitalCount: Int
 }
 
+struct TodayImportantChange: Equatable, Sendable {
+    let metric: HealthMetricType
+    let whatChanged: String
+    let actionText: String
+    let relativeDifference: Double
+}
+
 struct TodayDashboardPresentation: Equatable, Sendable {
     let selectedDate: Date
     let dateStatuses: [TodayDashboardDateStatus]
@@ -102,6 +109,7 @@ struct TodayDashboardPresentation: Equatable, Sendable {
     let stepHourlyBars: [TodayHourlyBar]
     let energyHourlyBars: [TodayHourlyBar]
     let sleepSegments: [TodaySleepSegment]
+    let importantChange: TodayImportantChange?
     let loadReference: TodayLoadReference
     let trainingReadiness: TodayTrainingReadiness
     let nightVitals: [TodayNightVital]
@@ -202,6 +210,11 @@ enum TodayDashboardPresentationFactory {
                 calendar: calendar
             ),
             sleepSegments: night.segments,
+            importantChange: TodayImportantChangeSelector.select(
+                snapshot: snapshot,
+                selectedDate: selectedDay,
+                calendar: calendar
+            ),
             loadReference: loadReference,
             trainingReadiness: readiness,
             nightVitals: nightVitals,
@@ -603,6 +616,226 @@ enum TodayDashboardPresentationFactory {
                 detail: "个人基线仍不足，继续积累数据后再评价。",
                 availableVitalCount: availableCount
             )
+        }
+    }
+}
+
+enum TodayImportantChangeSelector {
+    private struct Configuration {
+        let metric: HealthMetricType
+        let relativeThreshold: Double
+        let priority: Int
+    }
+
+    private struct Candidate {
+        let change: TodayImportantChange
+        let score: Double
+        let priority: Int
+    }
+
+    private static let configurations = [
+        Configuration(metric: .sleepDuration, relativeThreshold: 0.08, priority: 0),
+        Configuration(metric: .heartRateVariability, relativeThreshold: 0.15, priority: 1),
+        Configuration(metric: .restingHeartRate, relativeThreshold: 0.08, priority: 2),
+        Configuration(metric: .stepCount, relativeThreshold: 0.15, priority: 3),
+        Configuration(metric: .activeEnergy, relativeThreshold: 0.18, priority: 4),
+        Configuration(metric: .exerciseDuration, relativeThreshold: 0.25, priority: 5)
+    ]
+
+    static func select(
+        snapshot: HealthDataSnapshot,
+        selectedDate: Date,
+        calendar: Calendar = .current
+    ) -> TodayImportantChange? {
+        configurations.compactMap { configuration in
+            candidate(
+                configuration: configuration,
+                snapshot: snapshot,
+                selectedDate: selectedDate,
+                calendar: calendar
+            )
+        }
+        .sorted {
+            if abs($0.score - $1.score) > 0.000_001 {
+                return $0.score > $1.score
+            }
+            return $0.priority < $1.priority
+        }
+        .first?.change
+    }
+
+    private static func candidate(
+        configuration: Configuration,
+        snapshot: HealthDataSnapshot,
+        selectedDate: Date,
+        calendar: Calendar
+    ) -> Candidate? {
+        guard case let .available(samples) = snapshot[configuration.metric] else {
+            return nil
+        }
+        let currentPoints = HealthMetricDailySeriesCalculator.points(
+            metric: configuration.metric,
+            samples: samples,
+            endingAt: selectedDate,
+            window: .sevenDays,
+            calendar: calendar
+        )
+        guard currentPoints.count >= HealthDataQualityThresholds.shortTermMinimumValidDays,
+              let currentStart = calendar.date(byAdding: .day, value: -6, to: selectedDate),
+              let baselineEnd = calendar.date(byAdding: .second, value: -1, to: currentStart),
+              case let .available(baseline) = HealthMetricBaselineEngine.calculate(
+                  metric: configuration.metric,
+                  samples: samples,
+                  endingAt: baselineEnd,
+                  calendar: calendar
+              ),
+              baseline.medianValue > 0,
+              hasStableSource(
+                  metric: configuration.metric,
+                  samples: samples,
+                  endingAt: selectedDate,
+                  calendar: calendar
+              )
+        else {
+            return nil
+        }
+
+        let currentMedian = median(currentPoints.map(\.value).sorted())
+        let relativeDifference = (currentMedian - baseline.medianValue) / baseline.medianValue
+        let robustThreshold = baseline.medianAbsoluteDeviation * 2.5 / baseline.medianValue
+        let effectiveThreshold = max(configuration.relativeThreshold, robustThreshold)
+        guard abs(relativeDifference) >= effectiveThreshold else { return nil }
+
+        let direction = relativeDifference > 0 ? 1.0 : -1.0
+        let alignedDayCount = currentPoints.filter {
+            (($0.value - baseline.medianValue) * direction)
+                >= baseline.medianValue * configuration.relativeThreshold * 0.5
+        }.count
+        let requiredAlignedDays = max(3, Int(ceil(Double(currentPoints.count) / 2)))
+        guard alignedDayCount >= requiredAlignedDays else { return nil }
+
+        let change = TodayImportantChange(
+            metric: configuration.metric,
+            whatChanged: whatChangedText(
+                metric: configuration.metric,
+                currentMedian: currentMedian,
+                baselineMedian: baseline.medianValue,
+                relativeDifference: relativeDifference
+            ),
+            actionText: actionText(
+                metric: configuration.metric,
+                relativeDifference: relativeDifference
+            ),
+            relativeDifference: relativeDifference
+        )
+        return Candidate(
+            change: change,
+            score: abs(relativeDifference) / effectiveThreshold,
+            priority: configuration.priority
+        )
+    }
+
+    private static func hasStableSource(
+        metric: HealthMetricType,
+        samples: [HealthMetricSample],
+        endingAt selectedDate: Date,
+        calendar: Calendar
+    ) -> Bool {
+        let endDay = calendar.startOfDay(for: selectedDate)
+        guard let firstDay = calendar.date(byAdding: .day, value: -34, to: endDay) else {
+            return false
+        }
+        let grouped = Dictionary(grouping: samples.filter {
+            let day = calendar.startOfDay(for: $0.endDate)
+            return day >= firstDay && day <= endDay
+        }) { calendar.startOfDay(for: $0.endDate) }
+
+        let sourceSignatures = grouped.values.compactMap { daySamples -> String? in
+            let selected: [HealthMetricSample]
+            switch metric {
+            case .stepCount, .sleepDuration, .activeEnergy, .exerciseDuration:
+                guard let preferred = PreferredHealthMetricSourceSelector.samples(
+                    from: daySamples
+                ) else { return nil }
+                selected = preferred
+            default:
+                selected = daySamples
+            }
+            let identifiers = Set(selected.map {
+                $0.source.bundleIdentifier ?? $0.source.displayName
+            })
+            guard identifiers.count == 1 else { return nil }
+            return identifiers.first
+        }
+        return !sourceSignatures.isEmpty && Set(sourceSignatures).count == 1
+    }
+
+    private static func median(_ sortedValues: [Double]) -> Double {
+        let middle = sortedValues.count / 2
+        if sortedValues.count.isMultiple(of: 2) {
+            return (sortedValues[middle - 1] + sortedValues[middle]) / 2
+        }
+        return sortedValues[middle]
+    }
+
+    private static func whatChangedText(
+        metric: HealthMetricType,
+        currentMedian: Double,
+        baselineMedian: Double,
+        relativeDifference: Double
+    ) -> String {
+        let direction = relativeDifference > 0 ? "增加" : "减少"
+        let percentage = Int((abs(relativeDifference) * 100).rounded())
+        return "近 7 天\(title(for: metric))中位数为 \(valueText(currentMedian, unit: metric.expectedUnit))，比前期个人基线 \(valueText(baselineMedian, unit: metric.expectedUnit))\(direction) \(percentage)%。"
+    }
+
+    private static func title(for metric: HealthMetricType) -> String {
+        switch metric {
+        case .sleepDuration: "睡眠时长"
+        case .heartRateVariability: "HRV"
+        case .restingHeartRate: "静息心率"
+        case .stepCount: "步数"
+        case .activeEnergy: "活动能量"
+        case .exerciseDuration: "锻炼时长"
+        default: metric.rawValue
+        }
+    }
+
+    private static func valueText(_ value: Double, unit: HealthMetricUnit) -> String {
+        switch unit {
+        case .count: "\(Int(value.rounded())) 步"
+        case .hours: "\(value.formatted(.number.precision(.fractionLength(1)))) 小时"
+        case .beatsPerMinute: "\(Int(value.rounded())) 次/分"
+        case .milliseconds: "\(Int(value.rounded())) ms"
+        case .kilocalories: "\(Int(value.rounded())) 千卡"
+        case .minutes: "\(Int(value.rounded())) 分钟"
+        default: value.formatted(.number.precision(.fractionLength(1)))
+        }
+    }
+
+    private static func actionText(
+        metric: HealthMetricType,
+        relativeDifference: Double
+    ) -> String {
+        switch (metric, relativeDifference > 0) {
+        case (.sleepDuration, false):
+            "今晚可先保持固定上床时间，并继续观察接下来几天。"
+        case (.sleepDuration, true):
+            "可先保持当前作息，继续观察这一变化是否稳定。"
+        case (.heartRateVariability, false):
+            "今天可优先休息或轻松活动，并结合自己的感受继续观察。"
+        case (.heartRateVariability, true):
+            "先保持当前节奏；单项 HRV 变化不代表整体健康结论。"
+        case (.restingHeartRate, true):
+            "今天可选择较轻松的活动，并结合疲劳或不适感继续观察。"
+        case (.restingHeartRate, false):
+            "先保持当前节奏；单项静息心率变化不代表整体健康结论。"
+        case (.stepCount, false), (.activeEnergy, false), (.exerciseDuration, false):
+            "如果身体感觉允许，可安排一次 10～15 分钟的轻松活动。"
+        case (.stepCount, true), (.activeEnergy, true), (.exerciseDuration, true):
+            "可保持当前活动节奏，同时留意自己的疲劳感。"
+        default:
+            "继续观察接下来几天，并以自己的感受为准。"
         }
     }
 }

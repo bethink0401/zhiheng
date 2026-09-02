@@ -122,6 +122,59 @@ class AIProxyTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             server.validate_client_request(self.payload)
 
+    def test_client_request_accepts_bounded_plan_evaluation(self) -> None:
+        self.payload["planEvaluation"] = {
+            "planID": "microplan.afternoonWalk.test",
+            "planTitle": "午后步行",
+            "taskTitle": "午后轻松步行 10 分钟",
+            "status": "completed",
+            "scheduledCount": 5,
+            "completedCount": 4,
+            "skippedCount": 1,
+            "completionRate": 0.8,
+            "userFeedback": ["完成后感觉比较轻松"],
+            "metrics": [{
+                "metric": "stepCount",
+                "healthMetric": "stepCount",
+                "beforeMedian": 5000,
+                "planMedian": 5600,
+                "changeFromBefore": 600,
+                "beforeValidDayCount": 5,
+                "planValidDayCount": 5,
+                "direction": "favorable",
+            }],
+            "dataQualitySummary": "1 项相关指标具备计划前后对照",
+            "localVerdict": "mayHaveHelped",
+        }
+
+        validated = server.validate_client_request(self.payload)
+
+        self.assertEqual(
+            validated["planEvaluation"]["userFeedback"],
+            ["完成后感觉比较轻松"],
+        )
+        self.assertIn("计划结束评估", server.build_deepseek_request(validated)["instructions"])
+
+    def test_client_request_rejects_oversized_plan_feedback(self) -> None:
+        evaluation = {
+            "planID": "plan",
+            "planTitle": "计划",
+            "taskTitle": "任务",
+            "status": "endedEarly",
+            "scheduledCount": 1,
+            "completedCount": 1,
+            "skippedCount": 0,
+            "completionRate": 1.0,
+            "userFeedback": ["感" * 161],
+            "metrics": [],
+            "dataQualitySummary": "数据不足",
+            "localVerdict": "insufficientData",
+        }
+        self.payload["planEvaluation"] = evaluation
+
+        with self.assertRaises(ValueError):
+            server.validate_client_request(self.payload)
+
     def test_extracts_structured_output(self) -> None:
         expected = {"summary": "ok"}
         payload = {

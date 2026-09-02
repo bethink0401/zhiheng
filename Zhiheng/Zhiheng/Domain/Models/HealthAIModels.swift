@@ -68,6 +68,19 @@ struct HealthAIRequest: Codable, Equatable, Sendable {
     let question: String
     let factPack: HealthFactPack
     let recentConversation: [HealthAIConversationTurn]
+    let planEvaluation: MicroPlanEvaluationFactPack?
+
+    init(
+        question: String,
+        factPack: HealthFactPack,
+        recentConversation: [HealthAIConversationTurn],
+        planEvaluation: MicroPlanEvaluationFactPack? = nil
+    ) {
+        self.question = question
+        self.factPack = factPack
+        self.recentConversation = recentConversation
+        self.planEvaluation = planEvaluation
+    }
 }
 
 enum HealthAISafetyLevel: String, Codable, Sendable {

@@ -62,7 +62,7 @@
 1. Presentation 和 ViewModel 只使用 `MicroPlan`、`MicroPlanProgress`、`PlanOutcomeInput` 等领域类型。
 2. 所有计划写操作经过 `CarePlanService`；不得在按钮事件中直接创建 `OCKOutcome`。
 3. 计划列表与详情使用 SwiftUI；趋势与计划结果图使用 Swift Charts。
-4. 完成、跳过、困难度和提前结束必须有明确的加载、成功、冲突与失败状态，不能乐观显示后不处理持久化失败。
+4. 完成、跳过、暂停、恢复和提前结束必须有明确的加载、成功、冲突与失败状态，不能乐观显示后不处理持久化失败。
 5. 用户文案由知衡资源统一管理，不依赖示例字符串。
 6. 不复制 OCKSample 的品牌、完整布局或示例医疗叙事。
 
@@ -82,4 +82,3 @@
 - CareKit 4.1.0 包依赖和 UI 源码已核对。
 - 正式工程仍只链接 CareKitStore，未增加 UI 依赖。
 - 当前领域隔离与磁盘持久化测试保持通过。
-

@@ -49,6 +49,8 @@ struct RootTabView: View {
         )
         let startsOnPlans = ProcessInfo.processInfo.arguments.contains(
             "--plans-preview"
+        ) || ProcessInfo.processInfo.arguments.contains(
+            "--plans-feedback-preview"
         )
         let startsOnProfile = ProcessInfo.processInfo.arguments.contains(
             "--profile-preview"
@@ -73,9 +75,28 @@ struct RootTabView: View {
         _demoHealthSession = StateObject(
             wrappedValue: HealthDataSession(service: demoService ?? liveService)
         )
+        let planStoreName: String
+#if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--plans-evaluation-preview") {
+            planStoreName = "ZhihengCarePlansEvaluationPreview"
+        } else if ProcessInfo.processInfo.arguments.contains("--plans-feedback-preview") {
+            planStoreName = "ZhihengCarePlansFeedbackPreview"
+        } else {
+            planStoreName = "ZhihengCarePlans"
+        }
+#else
+        planStoreName = "ZhihengCarePlans"
+#endif
+        let baselineStore: any PlanBaselineStore
+        do {
+            baselineStore = try SwiftDataPlanBaselineStore()
+        } catch {
+            baselineStore = UnavailablePlanBaselineStore()
+        }
         _microPlanSession = StateObject(
             wrappedValue: MicroPlanSession(
-                service: CareKitPlanStore(onDiskStoreNamed: "ZhihengCarePlans")
+                service: CareKitPlanStore(onDiskStoreNamed: planStoreName),
+                baselineStore: baselineStore
             )
         )
         isDemoAvailable = demoService != nil
@@ -108,14 +129,19 @@ struct RootTabView: View {
             )
             let seedsActionsPreview = ProcessInfo.processInfo.arguments.contains(
                 "--plans-actions-preview"
+            ) || ProcessInfo.processInfo.arguments.contains(
+                "--plans-feedback-preview"
             )
-            if seedsProgressPreview || seedsActionsPreview {
+            let seedsEvaluationPreview = ProcessInfo.processInfo.arguments.contains(
+                "--plans-evaluation-preview"
+            )
+            if seedsProgressPreview || seedsActionsPreview || seedsEvaluationPreview {
                 for _ in 0..<20 where microPlanSession.isBusy {
                     try? await Task.sleep(for: .milliseconds(50))
                 }
                 await microPlanSession.refresh()
             }
-            if seedsProgressPreview || seedsActionsPreview,
+            if seedsProgressPreview || seedsActionsPreview || seedsEvaluationPreview,
                microPlanSession.activePlan == nil,
                !microPlanSession.isBusy {
                 let calendar = Calendar.current
@@ -131,9 +157,11 @@ struct RootTabView: View {
                         templateID: .earlierBedtime,
                         rationale: "用一个短而明确的行动观察作息变化。"
                     ),
+                    healthSnapshot: activeHealthSession.snapshot,
+                    dataMode: activeHealthSession.dataMode,
                     referenceDate: previewStart
                 )
-                if didStart, seedsProgressPreview {
+                if didStart, seedsProgressPreview || seedsEvaluationPreview {
                     for dayOffset in 0..<4 {
                         let day = calendar.date(
                             byAdding: .day,
@@ -142,8 +170,16 @@ struct RootTabView: View {
                         ) ?? previewStart
                         await microPlanSession.recordToday(
                             .completed,
+                            feedback: seedsEvaluationPreview
+                                ? (dayOffset.isMultiple(of: 2)
+                                    ? "今天更容易开始，结束后感觉比较轻松。"
+                                    : nil)
+                                : nil,
                             referenceDate: day
                         )
+                    }
+                    if seedsEvaluationPreview {
+                        await microPlanSession.endEarly()
                     }
                     await microPlanSession.refresh()
                 }

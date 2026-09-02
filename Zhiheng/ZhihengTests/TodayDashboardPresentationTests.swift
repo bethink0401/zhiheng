@@ -287,6 +287,132 @@ final class TodayDashboardPresentationTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(presentation.nightSummary.availableVitalCount, 3)
     }
 
+    func testImportantChangeExplainsSustainedSleepDeclineWithDataQuality() throws {
+        let context = try makeContext(dayCount: 35)
+        let sleep = try context.days.enumerated().map { index, day in
+            try sample(
+                .sleepDuration,
+                value: index < 28 ? 7.5 : 6.5,
+                day: day,
+                hour: 7
+            )
+        }
+        let presentation = TodayDashboardPresentationFactory.make(
+            snapshot: snapshot([.sleepDuration: sleep]),
+            selectedDate: context.days[34],
+            today: context.days[34],
+            goals: .standard,
+            calendar: context.calendar
+        )
+
+        let change = try XCTUnwrap(presentation.importantChange)
+        XCTAssertEqual(change.metric, .sleepDuration)
+        XCTAssertTrue(change.whatChanged.contains("减少 13%"))
+        XCTAssertTrue(change.actionText.contains("固定上床时间"))
+    }
+
+    func testImportantChangeRequiresFourRecentValidDays() throws {
+        let context = try makeContext(dayCount: 35)
+        let baseline = try context.days.prefix(28).map {
+            try sample(.stepCount, value: 8_000, day: $0, hour: 20)
+        }
+        let recent = try context.days.suffix(3).map {
+            try sample(.stepCount, value: 3_000, day: $0, hour: 20)
+        }
+        let presentation = TodayDashboardPresentationFactory.make(
+            snapshot: snapshot([.stepCount: baseline + recent]),
+            selectedDate: context.days[34],
+            today: context.days[34],
+            goals: .standard,
+            calendar: context.calendar
+        )
+
+        XCTAssertNil(presentation.importantChange)
+    }
+
+    func testImportantChangeIgnoresSingleDayOutlier() throws {
+        let context = try makeContext(dayCount: 35)
+        let steps = try context.days.enumerated().map { index, day in
+            try sample(
+                .stepCount,
+                value: index == 34 ? 2_000 : 8_000,
+                day: day,
+                hour: 20
+            )
+        }
+        let presentation = TodayDashboardPresentationFactory.make(
+            snapshot: snapshot([.stepCount: steps]),
+            selectedDate: context.days[34],
+            today: context.days[34],
+            goals: .standard,
+            calendar: context.calendar
+        )
+
+        XCTAssertNil(presentation.importantChange)
+    }
+
+    func testImportantChangeSelectsOnlyStrongestQualifiedChange() throws {
+        let context = try makeContext(dayCount: 35)
+        let sleep = try context.days.enumerated().map { index, day in
+            try sample(
+                .sleepDuration,
+                value: index < 28 ? 7 : 6.3,
+                day: day,
+                hour: 7
+            )
+        }
+        let steps = try context.days.enumerated().map { index, day in
+            try sample(
+                .stepCount,
+                value: index < 28 ? 8_000 : 4_800,
+                day: day,
+                hour: 20
+            )
+        }
+        let presentation = TodayDashboardPresentationFactory.make(
+            snapshot: snapshot([.sleepDuration: sleep, .stepCount: steps]),
+            selectedDate: context.days[34],
+            today: context.days[34],
+            goals: .standard,
+            calendar: context.calendar
+        )
+
+        XCTAssertEqual(presentation.importantChange?.metric, .stepCount)
+    }
+
+    func testImportantChangeStopsWhenDataSourceChanges() throws {
+        let context = try makeContext(dayCount: 35)
+        let phoneSource = HealthMetricSource(
+            sourceName: "iPhone",
+            bundleIdentifier: "com.apple.health.phone",
+            deviceName: "iPhone"
+        )
+        let baseline = try context.days.prefix(28).map {
+            try sample(.stepCount, value: 8_000, day: $0, hour: 20)
+        }
+        let recent = try context.days.suffix(7).map { day in
+            let end = day.addingTimeInterval(20 * 60 * 60)
+            return try HealthMetricSample(
+                id: UUID(),
+                metricType: .stepCount,
+                startDate: end.addingTimeInterval(-60),
+                endDate: end,
+                value: 4_000,
+                unit: .count,
+                source: phoneSource
+            )
+        }
+        let presentation = TodayDashboardPresentationFactory.make(
+            snapshot: snapshot([.stepCount: baseline + recent]),
+            selectedDate: context.days[34],
+            today: context.days[34],
+            goals: .standard,
+            calendar: context.calendar
+        )
+
+        XCTAssertNil(presentation.importantChange)
+    }
+
     private func makeContext(dayCount: Int = 2) throws -> (
         calendar: Calendar,
         days: [Date]

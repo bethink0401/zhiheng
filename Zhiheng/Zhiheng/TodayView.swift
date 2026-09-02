@@ -67,7 +67,7 @@ struct TodayView: View {
                         dateStrip
                         if let dashboard {
                             progressHero(dashboard)
-                            dashboardSection(.body) { bodyGrid(dashboard) }
+                            dashboardSection(.body) { bodyContent(dashboard) }
                             dashboardSection(.daily) { dailyGrid(dashboard) }
                             dashboardSection(.nightlyVitals) { nightlyVitals(dashboard) }
                         } else if isLoadingHealthData {
@@ -260,6 +260,129 @@ struct TodayView: View {
             content()
         }
         .id(section)
+    }
+
+    private func bodyContent(_ dashboard: TodayDashboardPresentation) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            bodyGrid(dashboard)
+            importantChangeCard(dashboard.importantChange)
+        }
+    }
+
+    @ViewBuilder
+    private func importantChangeCard(_ change: TodayImportantChange?) -> some View {
+        if let change {
+            NavigationLink {
+                HealthMetricDetailView(
+                    metric: change.metric,
+                    state: healthSnapshot?[change.metric] ?? .noVisibleData,
+                    referenceDate: selectedDate
+                )
+            } label: {
+                importantChangeContent(change)
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint("打开对应指标详情")
+        } else {
+            VStack(alignment: .leading, spacing: 12) {
+                importantChangeHeader(
+                    icon: "binoculars.fill",
+                    color: .teal
+                )
+                Text("暂未发现达到观察门槛的持续变化")
+                    .font(.title3.weight(.bold))
+                    .foregroundStyle(todayInk)
+                Text("系统只会在最近 7 天与个人 28 天基线都有足够记录时显示一项变化。缺失数据不会补成 0，也不会为了填满卡片而下结论。")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Label("继续佩戴并记录，明天再观察", systemImage: "arrow.clockwise")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.teal)
+            }
+            .dashboardCard(minHeight: nil)
+            .accessibilityElement(children: .combine)
+        }
+    }
+
+    private func importantChangeContent(_ change: TodayImportantChange) -> some View {
+        return VStack(alignment: .leading, spacing: 14) {
+            importantChangeHeader(
+                icon: "binoculars.fill",
+                color: .teal
+            )
+            importantChangeDetail(
+                title: "发生了什么",
+                text: change.whatChanged,
+                icon: "waveform.path.ecg",
+                emphasized: true
+            )
+            Divider()
+            importantChangeDetail(
+                title: "建议",
+                text: change.actionText,
+                icon: "lightbulb.max.fill"
+            )
+            HStack(spacing: 5) {
+                Spacer()
+                Text("查看指标详情")
+                Image(systemName: "chevron.right")
+            }
+            .font(.footnote.weight(.semibold))
+            .foregroundStyle(.secondary)
+        }
+        .dashboardCard(minHeight: nil)
+    }
+
+    private func importantChangeHeader(
+        icon: String,
+        color: Color
+    ) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.headline)
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(color)
+                .frame(width: 34, height: 34)
+                .background(color.opacity(0.12), in: Circle())
+                .overlay {
+                    Circle().stroke(color.opacity(0.16), lineWidth: 0.7)
+                }
+            Text("今日变化")
+                .font(.headline)
+                .foregroundStyle(todayInk)
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func importantChangeDetail(
+        title: String,
+        text: String,
+        icon: String,
+        emphasized: Bool = false
+    ) -> some View {
+        HStack(alignment: .top, spacing: 11) {
+            Image(systemName: icon)
+                .font(.subheadline.weight(.semibold))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(.teal)
+                .frame(width: 30, height: 30)
+                .background(.teal.opacity(0.12), in: Circle())
+                .overlay {
+                    Circle()
+                        .stroke(.teal.opacity(0.16), lineWidth: 0.7)
+                }
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Text(text)
+                    .font(emphasized ? .body.weight(.semibold) : .subheadline)
+                    .foregroundStyle(emphasized ? todayInk : .primary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .accessibilityElement(children: .combine)
     }
 
     @ViewBuilder
