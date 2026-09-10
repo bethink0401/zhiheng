@@ -143,6 +143,12 @@ class AIProxyTests(unittest.TestCase):
                 "planValidDayCount": 5,
                 "direction": "favorable",
             }],
+            "contextStatus": "recorded",
+            "contextEvents": [{
+                "kind": "overtime",
+                "occurrenceCount": 2,
+                "highestIntensity": 3,
+            }],
             "dataQualitySummary": "1 项相关指标具备计划前后对照",
             "localVerdict": "mayHaveHelped",
         }
@@ -153,7 +159,37 @@ class AIProxyTests(unittest.TestCase):
             validated["planEvaluation"]["userFeedback"],
             ["完成后感觉比较轻松"],
         )
+        self.assertEqual(
+            validated["planEvaluation"]["contextEvents"][0]["kind"],
+            "overtime",
+        )
         self.assertIn("计划结束评估", server.build_deepseek_request(validated)["instructions"])
+
+    def test_client_request_rejects_free_text_in_plan_context(self) -> None:
+        self.payload["planEvaluation"] = {
+            "planID": "plan",
+            "planTitle": "计划",
+            "taskTitle": "任务",
+            "status": "completed",
+            "scheduledCount": 5,
+            "completedCount": 4,
+            "skippedCount": 1,
+            "completionRate": 0.8,
+            "userFeedback": [],
+            "metrics": [],
+            "contextStatus": "recorded",
+            "contextEvents": [{
+                "kind": "custom",
+                "occurrenceCount": 1,
+                "highestIntensity": None,
+                "customLabel": "不得上传的自定义名称",
+            }],
+            "dataQualitySummary": "数据不足",
+            "localVerdict": "insufficientData",
+        }
+
+        with self.assertRaises(ValueError):
+            server.validate_client_request(self.payload)
 
     def test_client_request_rejects_oversized_plan_feedback(self) -> None:
         evaluation = {
@@ -167,6 +203,8 @@ class AIProxyTests(unittest.TestCase):
             "completionRate": 1.0,
             "userFeedback": ["感" * 161],
             "metrics": [],
+            "contextStatus": "notRecorded",
+            "contextEvents": [],
             "dataQualitySummary": "数据不足",
             "localVerdict": "insufficientData",
         }

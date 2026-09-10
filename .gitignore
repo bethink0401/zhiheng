@@ -14,6 +14,10 @@ xcuserdata/
 __pycache__/
 *.py[cod]
 
+# Generated exports and visual QA renders
+output/
+竞赛材料/artifacts/
+
 # Local secrets and environment overrides
 .env
 .env.*

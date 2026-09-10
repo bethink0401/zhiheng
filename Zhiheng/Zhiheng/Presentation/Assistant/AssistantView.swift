@@ -299,7 +299,7 @@ final class AssistantViewModel: ObservableObject {
     private static func userMessage(for error: Error) -> String {
         switch error as? HealthAIServiceError {
         case .notConfigured:
-            "AI 服务尚未配置。个人调试请先到“我的”保存 DeepSeek 密钥。"
+            "AI 服务尚未配置。个人调试请从“今日”右上角的设置保存 DeepSeek 密钥。"
         case .timedOut:
             "AI 回答超时了，你可以稍后重试。"
         case .cancelled:
@@ -395,7 +395,9 @@ struct AssistantView: View {
                 runDebugSmokeQuestionIfNeeded()
             }
             .task {
-                await planSession.refresh()
+                await planSession.refreshIfNeeded(
+                    dataMode: healthSession.dataMode
+                )
             }
         }
     }

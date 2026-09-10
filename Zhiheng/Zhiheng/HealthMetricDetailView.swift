@@ -17,6 +17,7 @@ struct HealthMetricDetailView: View {
                 currentValueCard
                 if case let .available(samples) = state {
                     trendCard(samples)
+                    trendEvidenceCard(samples)
                     dataCoverageCard(samples)
                     recentRecordsCard(samples)
                 }
@@ -166,6 +167,176 @@ struct HealthMetricDetailView: View {
             Color(uiColor: .secondarySystemGroupedBackground),
             in: RoundedRectangle(cornerRadius: 22)
         )
+    }
+
+    @ViewBuilder
+    private func trendEvidenceCard(_ samples: [HealthMetricSample]) -> some View {
+        if let evidence = HealthMetricTrendEvidenceBuilder.make(
+            metric: metric,
+            samples: samples,
+            endingAt: referenceDate
+        ) {
+            VStack(alignment: .leading, spacing: 14) {
+                Label("趋势依据", systemImage: "checklist.checked")
+                    .font(.headline)
+
+                HStack(spacing: 8) {
+                    Image(systemName: evidenceStateIcon(evidence.state))
+                        .foregroundStyle(.teal)
+                    Text(evidenceStateText(evidence.state))
+                        .font(.subheadline.weight(.semibold))
+                }
+
+                Divider()
+
+                evidenceWindowRow(
+                    title: "当前窗口",
+                    interval: evidence.currentInterval,
+                    validDayCount: evidence.currentValidDayCount,
+                    expectedDayCount: evidence.currentExpectedDayCount
+                )
+                evidenceWindowRow(
+                    title: "个人基线",
+                    interval: evidence.baselineInterval,
+                    validDayCount: evidence.baselineValidDayCount,
+                    expectedDayCount: evidence.baselineExpectedDayCount
+                )
+
+                if let current = evidence.currentMedianValue,
+                   let baseline = evidence.baselineMedianValue {
+                    evidenceRow(
+                        title: "中位数对比",
+                        value: "\(valueText(current, unit: evidence.unit)) / \(valueText(baseline, unit: evidence.unit))"
+                    )
+                }
+                if let relativeChange = evidence.relativeChange {
+                    evidenceRow(
+                        title: "相对变化",
+                        value: relativeChangeText(relativeChange)
+                    )
+                }
+                evidenceRow(
+                    title: "变化门槛",
+                    value: thresholdText(evidence)
+                )
+                if let alignedDayCount = evidence.alignedDayCount,
+                   let analysisDayCount = evidence.analysisDayCount,
+                   let requiredAlignedDayCount = evidence.requiredAlignedDayCount {
+                    evidenceRow(
+                        title: "同向记录",
+                        value: "\(alignedDayCount)/\(analysisDayCount) 天 · 至少 \(requiredAlignedDayCount) 天"
+                    )
+                }
+                if evidence.isolatedOutlierExcluded {
+                    Label("计算时已排除 1 个孤立日期；原始记录仍保留在图表中。", systemImage: "shield.checkered")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                if evidence.state == .sourceChanged {
+                    Label("窗口内数据来源有变化，因此不会形成持续变化结论。", systemImage: "arrow.triangle.branch")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Text("计算固定比较近 7 天与此前不重叠的 28 天个人基线，并依次检查有效日、来源、单日异常、变化门槛和同向天数。数值方向不代表健康变好或变差。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding()
+            .background(
+                Color(uiColor: .secondarySystemGroupedBackground),
+                in: RoundedRectangle(cornerRadius: 22)
+            )
+            .accessibilityElement(children: .contain)
+        }
+    }
+
+    private func evidenceWindowRow(
+        title: String,
+        interval: DateInterval,
+        validDayCount: Int,
+        expectedDayCount: Int
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            evidenceRow(
+                title: title,
+                value: "有效 \(validDayCount)/\(expectedDayCount) 天"
+            )
+            Text(intervalText(interval))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func evidenceRow(title: String, value: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text(title)
+                .font(.subheadline)
+            Spacer(minLength: 8)
+            Text(value)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.trailing)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private func intervalText(_ interval: DateInterval) -> String {
+        let finalIncludedDate = interval.end.addingTimeInterval(-1)
+        let start = interval.start.formatted(.dateTime.year().month().day())
+        let end = finalIncludedDate.formatted(.dateTime.year().month().day())
+        return "\(start)–\(end)"
+    }
+
+    private func relativeChangeText(_ relativeChange: Double) -> String {
+        let percentage = Int((abs(relativeChange) * 100).rounded())
+        if relativeChange > 0 {
+            return "增加 \(percentage)%"
+        }
+        if relativeChange < 0 {
+            return "减少 \(percentage)%"
+        }
+        return "0%"
+    }
+
+    private func thresholdText(_ evidence: HealthMetricTrendEvidence) -> String {
+        let threshold = evidence.effectiveRelativeThreshold
+            ?? evidence.configuredMinimumRelativeChange
+        return "至少 \(Int((threshold * 100).rounded()))%"
+    }
+
+    private func evidenceStateText(_ state: HealthMetricTrendEvidenceState) -> String {
+        switch state {
+        case .currentWindowInsufficient:
+            "近 7 天记录不足，暂不判断"
+        case .baselineInsufficient:
+            "个人基线仍在建立，暂不判断"
+        case .sourceChanged:
+            "数据来源有变化，值得继续观察"
+        case .trend(.noClearChange):
+            "未见明确变化"
+        case .trend(.worthObserving):
+            "值得继续观察"
+        case .trend(.sustainedChange):
+            "存在持续变化"
+        }
+    }
+
+    private func evidenceStateIcon(_ state: HealthMetricTrendEvidenceState) -> String {
+        switch state {
+        case .currentWindowInsufficient, .baselineInsufficient:
+            "hourglass"
+        case .sourceChanged:
+            "arrow.triangle.branch"
+        case .trend(.noClearChange):
+            "equal.circle.fill"
+        case .trend(.worthObserving):
+            "eye.circle.fill"
+        case .trend(.sustainedChange):
+            "chart.line.uptrend.xyaxis.circle.fill"
+        }
     }
 
     private func dataCoverageCard(

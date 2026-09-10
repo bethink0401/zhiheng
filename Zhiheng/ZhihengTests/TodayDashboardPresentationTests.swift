@@ -3,6 +3,49 @@ import XCTest
 @testable import Zhiheng
 
 final class TodayDashboardPresentationTests: XCTestCase {
+    func testFeelingDotsFollowRatingDegreeWithReversedStressDirection() {
+        let positiveTones: [DailyFeelingTone] = [.strongWarm, .warm, .neutral, .cool, .strongCool]
+        for (index, rating) in SubjectiveRating.allCases.enumerated() {
+            XCTAssertEqual(DailyFeelingField.energy.tone(for: rating), positiveTones[index])
+            XCTAssertEqual(DailyFeelingField.bodyFeeling.tone(for: rating), positiveTones[index])
+            XCTAssertEqual(DailyFeelingField.stress.tone(for: rating), positiveTones[4 - index])
+        }
+    }
+
+    func testEveryFeelingFieldTintsBothExtremesAndEmphasizesThemMore() throws {
+        for field in DailyFeelingField.allCases {
+            for (extreme, nearby) in [(SubjectiveRating.one, SubjectiveRating.two), (.five, .four)] {
+                let strong = try XCTUnwrap(field.tone(for: extreme))
+                let soft = try XCTUnwrap(field.tone(for: nearby))
+                XCTAssertTrue(strong.hasTint)
+                XCTAssertTrue(soft.hasTint)
+                XCTAssertGreaterThan(strong.backgroundOpacity, soft.backgroundOpacity)
+                XCTAssertGreaterThan(strong.borderOpacity, soft.borderOpacity)
+            }
+            XCTAssertEqual(field.tone(for: .three)?.hasTint, false)
+        }
+    }
+
+    func testUnrecordedFeelingsHaveNoDegreeColor() {
+        for field in DailyFeelingField.allCases {
+            XCTAssertNil(field.tone(for: nil))
+        }
+    }
+
+    func testTodayStateCardsMatchReferenceAspectRatioAcrossPhoneWidths() {
+        for containerWidth in [339.0, 366.0, 394.0] {
+            let width = TodayStateCardsLayout.cardWidth(containerWidth: containerWidth)
+            let height = TodayStateCardsLayout.cardHeight(width: width, contentHeight: 180)
+            XCTAssertEqual(width * 2 + TodayStateCardsLayout.spacing, containerWidth)
+            XCTAssertEqual(width / height, 484.0 / 568.0, accuracy: 0.001)
+            XCTAssertLessThan(height, 236)
+        }
+    }
+
+    func testTodayStateCardsExpandForLongContentInsteadOfClipping() {
+        XCTAssertEqual(TodayStateCardsLayout.cardHeight(width: 176, contentHeight: 310), 310)
+    }
+
     func testTodayHRVVisualStateMatchesReferenceState() {
         let current = TodayDashboardMetricValue(
             metric: .heartRateVariability,
@@ -67,6 +110,36 @@ final class TodayDashboardPresentationTests: XCTestCase {
             return XCTFail("Expected goal progress")
         }
         XCTAssertEqual(progress.percentage, 50)
+    }
+
+    func testSelectedDatePreservesStepAndActiveEnergyTotalsAndUnits() throws {
+        let context = try makeContext()
+        let steps = [
+            try sample(.stepCount, value: 1_500, day: context.days[0], hour: 8),
+            try sample(.stepCount, value: 2_500, day: context.days[0], hour: 18),
+            try sample(.stepCount, value: 9_000, day: context.days[1], hour: 18)
+        ]
+        let energy = [
+            try sample(.activeEnergy, value: 120, day: context.days[0], hour: 8),
+            try sample(.activeEnergy, value: 360, day: context.days[0], hour: 18),
+            try sample(.activeEnergy, value: 800, day: context.days[1], hour: 18)
+        ]
+        let presentation = TodayDashboardPresentationFactory.make(
+            snapshot: snapshot([.stepCount: steps, .activeEnergy: energy]),
+            selectedDate: context.days[0],
+            today: context.days[1],
+            goals: .standard,
+            calendar: context.calendar
+        )
+
+        XCTAssertEqual(presentation.values[.stepCount]?.value, 4_000)
+        XCTAssertEqual(presentation.values[.stepCount]?.unit, .count)
+        XCTAssertEqual(presentation.values[.activeEnergy]?.value, 480)
+        XCTAssertEqual(presentation.values[.activeEnergy]?.unit, .kilocalories)
+        XCTAssertEqual(presentation.stepHourlyBars[8].value, 1_500)
+        XCTAssertEqual(presentation.stepHourlyBars[18].value, 2_500)
+        XCTAssertEqual(presentation.energyHourlyBars[8].value, 120)
+        XCTAssertEqual(presentation.energyHourlyBars[18].value, 360)
     }
 
     func testDateWindowCanPageIndependentlyFromToday() throws {
@@ -308,6 +381,7 @@ final class TodayDashboardPresentationTests: XCTestCase {
         let change = try XCTUnwrap(presentation.importantChange)
         XCTAssertEqual(change.metric, .sleepDuration)
         XCTAssertTrue(change.whatChanged.contains("减少 13%"))
+        XCTAssertEqual(change.currentMedian, 6.5, accuracy: 0.001)
         XCTAssertTrue(change.actionText.contains("固定上床时间"))
     }
 
@@ -349,6 +423,73 @@ final class TodayDashboardPresentationTests: XCTestCase {
         )
 
         XCTAssertNil(presentation.importantChange)
+    }
+
+    func testImportantChangeKeepsSustainedShiftWhenOneOutlierCanBeExcluded() throws {
+        let context = try makeContext(dayCount: 35)
+        let sleep = try context.days.enumerated().map { index, day in
+            let value: Double
+            if index < 28 {
+                value = 8
+            } else if index == 34 {
+                value = 2
+            } else {
+                value = 7.2
+            }
+            return try sample(
+                .sleepDuration,
+                value: value,
+                day: day,
+                hour: 7
+            )
+        }
+        let presentation = TodayDashboardPresentationFactory.make(
+            snapshot: snapshot([.sleepDuration: sleep]),
+            selectedDate: context.days[34],
+            today: context.days[34],
+            goals: .standard,
+            calendar: context.calendar
+        )
+
+        let change = try XCTUnwrap(presentation.importantChange)
+        XCTAssertEqual(change.metric, .sleepDuration)
+        XCTAssertTrue(change.whatChanged.contains("减少 10%"))
+        XCTAssertEqual(change.currentMedian, 7.2, accuracy: 0.001)
+    }
+
+    func testImportantChangeCardValueUsesWindowMedianNotLatestDay() throws {
+        let context = try makeContext(dayCount: 35)
+        let samples = try context.days.enumerated().map { index, day in
+            try sample(.sleepDuration, value: index < 28 ? 8 : (index == 34 ? 7 : 6), day: day, hour: 7)
+        }
+        let presentation = TodayDashboardPresentationFactory.make(
+            snapshot: snapshot([.sleepDuration: samples]),
+            selectedDate: context.days[34], today: context.days[34],
+            goals: .standard, calendar: context.calendar
+        )
+        let change = try XCTUnwrap(presentation.importantChange)
+        XCTAssertEqual(change.currentMedian, 6, accuracy: 0.001)
+        XCTAssertEqual(change.relativeDifference, -0.25, accuracy: 0.001)
+        XCTAssertEqual(change.metricTitle, "睡眠时长")
+        XCTAssertEqual(change.metric.expectedUnit, .hours)
+    }
+
+    func testImportantChangeCardEnergyValueAndPercentageShareTheSameTrend() throws {
+        let context = try makeContext(dayCount: 35)
+        let samples = try context.days.enumerated().map { index, day in
+            try sample(.activeEnergy, value: index < 28 ? 500 : 650, day: day, hour: 20)
+        }
+        let presentation = TodayDashboardPresentationFactory.make(
+            snapshot: snapshot([.activeEnergy: samples]),
+            selectedDate: context.days[34], today: context.days[34],
+            goals: .standard, calendar: context.calendar
+        )
+        let change = try XCTUnwrap(presentation.importantChange)
+        XCTAssertEqual(change.currentMedian, 650, accuracy: 0.001)
+        XCTAssertEqual(change.relativeDifference, 0.3, accuracy: 0.001)
+        XCTAssertEqual(change.metricTitle, "活动能量")
+        XCTAssertEqual(change.metric.expectedUnit, .kilocalories)
+        XCTAssertTrue(change.whatChanged.contains("650"))
     }
 
     func testImportantChangeSelectsOnlyStrongestQualifiedChange() throws {

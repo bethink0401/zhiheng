@@ -1,10 +1,36 @@
 import Charts
 import SwiftUI
 
+private struct TodayDashboardRequest: Hashable, Sendable {
+    let snapshotIntervalEnd: Date?
+    let dataMode: String
+    let selectedDate: Date
+    let today: Date
+    let dateWindowEnd: Date
+    let stepsGoal: Double
+    let sleepGoal: Double
+    let activeEnergyGoal: Double
+    let exerciseGoal: Double
+    let standGoal: Double
+
+    var goals: TodayDashboardGoals {
+        TodayDashboardGoals(
+            steps: stepsGoal,
+            sleepHours: sleepGoal,
+            activeEnergyKilocalories: activeEnergyGoal,
+            exerciseMinutes: exerciseGoal,
+            standHours: standGoal
+        )
+    }
+}
+
 struct TodayView: View {
     @ObservedObject private var healthSession: HealthDataSession
+    private let checkInCoordinator: DailyCheckInCoordinator
+    private let settingsDestination: (Binding<TodayDashboardGoals>) -> AnyView
     private let debugScrollSection: TodayDashboardSection?
 
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @AppStorage("todayDashboardGoals") private var storedGoals = Data()
     @AppStorage("todayDashboardLayout") private var storedLayout = Data()
@@ -13,12 +39,23 @@ struct TodayView: View {
     @State private var selectedDate: Date
     @State private var dateWindowEnd: Date
     @State private var dateWindowShiftDirection = 0
-    @State private var showsGoalSettings = false
+    @State private var showsSettings = false
     @State private var editedSection: TodayDashboardSection?
     @State private var showsProgressInfo = false
+    @State private var dashboardPresentation: TodayDashboardPresentation?
+    @State private var displayedDashboardRequest: TodayDashboardRequest?
+    @State private var didPrepareView = false
 
-    init(healthSession: HealthDataSession) {
+    init(
+        healthSession: HealthDataSession,
+        checkInCoordinator: DailyCheckInCoordinator = DailyCheckInCoordinator(store: UnavailableSubjectiveRecordStore()),
+        settingsDestination: @escaping (Binding<TodayDashboardGoals>) -> AnyView = {
+            AnyView(TodayGoalSettingsView(goals: $0))
+        }
+    ) {
         self.healthSession = healthSession
+        self.checkInCoordinator = checkInCoordinator
+        self.settingsDestination = settingsDestination
         debugScrollSection = Self.debugSectionFromArguments
         let today = Calendar.current.startOfDay(for: Date())
         _selectedDate = State(initialValue: today)
@@ -45,37 +82,50 @@ struct TodayView: View {
     private var isLoadingHealthData: Bool { healthSession.isLoading }
     private var dataMode: HealthDataMode { healthSession.dataMode }
 
-    private var dashboard: TodayDashboardPresentation? {
-        healthSnapshot.map {
-            TodayDashboardPresentationFactory.make(
-                snapshot: $0,
-                selectedDate: selectedDate,
-                today: Date(),
-                dateWindowEnd: dateWindowEnd,
-                goals: goals
-            )
-        }
+    private var dashboardRequest: TodayDashboardRequest {
+        let calendar = Calendar.current
+        return TodayDashboardRequest(
+            snapshotIntervalEnd: healthSession.snapshotInterval?.end,
+            dataMode: dataMode.rawValue,
+            selectedDate: calendar.startOfDay(for: selectedDate),
+            today: calendar.startOfDay(for: Date()),
+            dateWindowEnd: calendar.startOfDay(for: dateWindowEnd),
+            stepsGoal: goals.steps,
+            sleepGoal: goals.sleepHours,
+            activeEnergyGoal: goals.activeEnergyKilocalories,
+            exerciseGoal: goals.exerciseMinutes,
+            standGoal: goals.standHours
+        )
     }
 
     var body: some View {
+        let request = dashboardRequest
+        let currentDashboard = displayedDashboardRequest == request
+            ? dashboardPresentation
+            : nil
         NavigationStack {
             ScrollViewReader { proxy in
                 ScrollView {
                     VStack(alignment: .leading, spacing: 24) {
                         header
                         if dataMode == .demo { demoModeBanner }
-                        dateStrip
-                        if let dashboard {
+                        dateStrip(currentDashboard)
+                        if let dashboard = currentDashboard {
                             progressHero(dashboard)
-                            dashboardSection(.body) { bodyContent(dashboard) }
+                        }
+                        if Calendar.current.isDateInToday(selectedDate) {
+                            dailyStateSection(change: currentDashboard?.importantChange)
+                                .id("today-state")
+                        }
+                        if let dashboard = currentDashboard {
+                            dashboardSection(.body) { bodyGrid(dashboard) }
                             dashboardSection(.daily) { dailyGrid(dashboard) }
                             dashboardSection(.nightlyVitals) { nightlyVitals(dashboard) }
-                        } else if isLoadingHealthData {
+                        } else if isLoadingHealthData || healthSnapshot != nil {
                             ProgressView("正在整理健康数据…")
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 80)
                         }
-                        privacyNote
                     }
                     .padding(.horizontal, 18)
                     .padding(.top, 12)
@@ -85,25 +135,66 @@ struct TodayView: View {
                 .toolbar(.hidden, for: .navigationBar)
                 .refreshable { await loadHealthData() }
                 .task {
+                    guard !didPrepareView else { return }
+                    didPrepareView = true
                     restorePreferences()
                     if let debugScrollSection {
                         try? await Task.sleep(for: .milliseconds(250))
                         proxy.scrollTo(debugScrollSection, anchor: .top)
                     }
+#if DEBUG
+                    if ProcessInfo.processInfo.arguments.contains("--today-state-preview") {
+                        try? await Task.sleep(for: .milliseconds(250))
+                        proxy.scrollTo("today-state", anchor: .top)
+                    }
+#endif
+                }
+                .onAppear { alignToCurrentDay() }
+                .onChange(of: scenePhase) { _, phase in
+                    if phase == .active { alignToCurrentDay() }
                 }
                 .onChange(of: goals) { _, newValue in storedGoals = encode(newValue) }
                 .onChange(of: layout) { _, newValue in storedLayout = encode(newValue) }
+                .task(id: request) { await prepareDashboard(for: request) }
             }
         }
-        .sheet(isPresented: $showsGoalSettings) {
-            TodayGoalSettingsView(goals: $goals)
+        .sheet(isPresented: $showsSettings) {
+            settingsDestination($goals)
         }
         .sheet(item: $editedSection) { section in
             TodayModuleEditorView(section: section, layout: $layout)
         }
         .sheet(isPresented: $showsProgressInfo) {
-            TodayProgressExplanationView(dashboard: dashboard)
+            TodayProgressExplanationView(dashboard: currentDashboard)
         }
+    }
+
+    @MainActor
+    private func prepareDashboard(for request: TodayDashboardRequest) async {
+        guard displayedDashboardRequest != request else { return }
+        dashboardPresentation = nil
+        displayedDashboardRequest = nil
+        guard let snapshot = healthSnapshot else {
+            guard request == dashboardRequest else { return }
+            displayedDashboardRequest = request
+            return
+        }
+
+        let calendar = Calendar.current
+        let presentation = await Task.detached(priority: .userInitiated) {
+            TodayDashboardPresentationFactory.make(
+                snapshot: snapshot,
+                selectedDate: request.selectedDate,
+                today: request.today,
+                dateWindowEnd: request.dateWindowEnd,
+                goals: request.goals,
+                calendar: calendar
+            )
+        }.value
+
+        guard !Task.isCancelled, request == dashboardRequest else { return }
+        dashboardPresentation = presentation
+        displayedDashboardRequest = request
     }
 
     private var header: some View {
@@ -125,7 +216,7 @@ struct TodayView: View {
                 }
                 .accessibilityLabel("更新健康数据")
             }
-            Button { showsGoalSettings = true } label: {
+            Button { showsSettings = true } label: {
                 Image(systemName: "gearshape.fill")
                     .font(.title2)
                     .frame(width: 52, height: 52)
@@ -133,11 +224,11 @@ struct TodayView: View {
                     .shadow(color: .black.opacity(0.08), radius: 16, y: 8)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("设置健康目标")
+            .accessibilityLabel("打开设置")
         }
     }
 
-    private var dateStrip: some View {
+    private func dateStrip(_ dashboard: TodayDashboardPresentation?) -> some View {
         let statuses = dashboard?.dateStatuses ?? TodayDashboardDateWindow.sevenDays(endingAt: Date()).map {
             TodayDashboardDateStatus(
                 date: $0,
@@ -262,10 +353,39 @@ struct TodayView: View {
         .id(section)
     }
 
-    private func bodyContent(_ dashboard: TodayDashboardPresentation) -> some View {
+    private func alignToCurrentDay() {
+        let today = Calendar.current.startOfDay(for: Date())
+        guard !Calendar.current.isDate(dateWindowEnd, inSameDayAs: today) else { return }
+        dateWindowEnd = today
+        selectedDate = today
+    }
+
+    private func dailyStateSection(change: TodayImportantChange?) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            bodyGrid(dashboard)
-            importantChangeCard(dashboard.importantChange)
+            HStack {
+                Text("今日状态")
+                    .font(.title2.weight(.bold))
+                    .foregroundStyle(TodayStatePalette.ink)
+                Spacer()
+                if dataMode == .live {
+                    SubjectiveHistoryButton(session: checkInCoordinator.history, healthSession: healthSession)
+                }
+            }
+            let cardLayout = dynamicTypeSize > .large
+                ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12))
+                : AnyLayout(TodayStateCardsLayout())
+            cardLayout {
+                TodayFeelingSummaryCard(
+                    session: checkInCoordinator.session,
+                    dataMode: dataMode,
+                    onEdit: { checkInCoordinator.openManually() }
+                )
+                importantChangeCard(change)
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            if dataMode == .live {
+                TodayContextEventsSummary(session: checkInCoordinator.contextEvents)
+            }
         }
     }
 
@@ -282,107 +402,136 @@ struct TodayView: View {
                 importantChangeContent(change)
             }
             .buttonStyle(.plain)
-            .accessibilityHint("打开对应指标详情")
+            .accessibilityLabel("今日变化。\(change.whatChanged)建议：\(change.actionText)")
+            .accessibilityHint("查看指标详情及趋势依据")
         } else {
-            VStack(alignment: .leading, spacing: 12) {
-                importantChangeHeader(
-                    icon: "binoculars.fill",
-                    color: .teal
-                )
-                Text("暂未发现达到观察门槛的持续变化")
-                    .font(.title3.weight(.bold))
-                    .foregroundStyle(todayInk)
-                Text("系统只会在最近 7 天与个人 28 天基线都有足够记录时显示一项变化。缺失数据不会补成 0，也不会为了填满卡片而下结论。")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 0) {
+                importantChangeHeader(hasDetail: false)
+                    .padding(.bottom, 11)
+                Text("继续观察")
+                    .todayStateFont(20, weight: .bold, relativeTo: .title3)
+                    .foregroundStyle(TodayStatePalette.ink)
+                Text("数据不足或未达变化门槛")
+                    .todayStateFont(11, relativeTo: .caption)
+                    .foregroundStyle(TodayStatePalette.muted)
                     .fixedSize(horizontal: false, vertical: true)
-                Label("继续佩戴并记录，明天再观察", systemImage: "arrow.clockwise")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.teal)
+                    .padding(.top, 3)
+                changeSuggestion("继续佩戴并记录，不急于下结论。")
+                    .padding(.top, 9)
+                Spacer(minLength: 8)
+                Divider().opacity(0.35)
+                Text("暂无变化详情")
+                    .todayStateFont(11, weight: .semibold, relativeTo: .caption)
+                    .foregroundStyle(TodayStatePalette.muted)
+                    .padding(.top, 6)
             }
-            .dashboardCard(minHeight: nil)
+            .todayStateCard()
             .accessibilityElement(children: .combine)
         }
     }
 
     private func importantChangeContent(_ change: TodayImportantChange) -> some View {
-        return VStack(alignment: .leading, spacing: 14) {
-            importantChangeHeader(
-                icon: "binoculars.fill",
-                color: .teal
-            )
-            importantChangeDetail(
-                title: "发生了什么",
-                text: change.whatChanged,
-                icon: "waveform.path.ecg",
-                emphasized: true
-            )
-            Divider()
-            importantChangeDetail(
-                title: "建议",
-                text: change.actionText,
-                icon: "lightbulb.max.fill"
-            )
-            HStack(spacing: 5) {
-                Spacer()
-                Text("查看指标详情")
-                Image(systemName: "chevron.right")
-            }
-            .font(.footnote.weight(.semibold))
-            .foregroundStyle(.secondary)
-        }
-        .dashboardCard(minHeight: nil)
-    }
-
-    private func importantChangeHeader(
-        icon: String,
-        color: Color
-    ) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: icon)
-                .font(.headline)
-                .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(color)
-                .frame(width: 34, height: 34)
-                .background(color.opacity(0.12), in: Circle())
-                .overlay {
-                    Circle().stroke(color.opacity(0.16), lineWidth: 0.7)
+        VStack(alignment: .leading, spacing: 0) {
+            importantChangeHeader(hasDetail: true)
+                .padding(.bottom, 11)
+            VStack(alignment: .leading, spacing: 2) {
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .firstTextBaseline, spacing: 4) {
+                        changeValue(change)
+                        Spacer(minLength: 0)
+                        changePercentage(change)
+                    }
+                    VStack(alignment: .leading, spacing: 4) {
+                        changeValue(change)
+                        changePercentage(change)
+                    }
                 }
-            Text("今日变化")
-                .font(.headline)
-                .foregroundStyle(todayInk)
-            Spacer(minLength: 0)
-        }
-    }
-
-    private func importantChangeDetail(
-        title: String,
-        text: String,
-        icon: String,
-        emphasized: Bool = false
-    ) -> some View {
-        HStack(alignment: .top, spacing: 11) {
-            Image(systemName: icon)
-                .font(.subheadline.weight(.semibold))
-                .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(.teal)
-                .frame(width: 30, height: 30)
-                .background(.teal.opacity(0.12), in: Circle())
-                .overlay {
-                    Circle()
-                        .stroke(.teal.opacity(0.16), lineWidth: 0.7)
-                }
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                Text(text)
-                    .font(emphasized ? .body.weight(.semibold) : .subheadline)
-                    .foregroundStyle(emphasized ? todayInk : .primary)
+                Text("7天\(change.metricTitle)中位数")
+                    .todayStateFont(11, relativeTo: .caption)
+                    .foregroundStyle(TodayStatePalette.muted)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            changeSuggestion(change.actionText)
+                .padding(.top, 9)
+            Spacer(minLength: 8)
+            Divider().opacity(0.35)
+            HStack {
+                Text("查看详情")
+                Spacer(minLength: 0)
+                Text(">")
+            }
+            .todayStateFont(11, weight: .semibold, relativeTo: .caption)
+            .foregroundStyle(TodayStatePalette.teal)
+            .padding(.top, 6)
         }
-        .accessibilityElement(children: .combine)
+        .todayStateCard()
+    }
+
+    private func changeValue(_ change: TodayImportantChange) -> some View {
+        let unit: String = switch change.metric.expectedUnit {
+        case .count: "步"
+        case .hours: "小时"
+        case .beatsPerMinute: "次/分"
+        case .milliseconds: "ms"
+        case .kilocalories: "千卡"
+        case .minutes: "分钟"
+        default: ""
+        }
+        return HStack(alignment: .firstTextBaseline, spacing: 3) {
+            Text(change.currentMedian, format: .number.precision(
+                .fractionLength(change.metric.expectedUnit == .hours ? 1 : 0)
+            ))
+            .todayStateFont(20, weight: .heavy, relativeTo: .title3)
+            .foregroundStyle(TodayStatePalette.number)
+            Text(unit)
+                .todayStateFont(11, weight: .medium, relativeTo: .caption)
+                .foregroundStyle(TodayStatePalette.muted)
+        }
+        .fixedSize()
+    }
+
+    private func changePercentage(_ change: TodayImportantChange) -> some View {
+        Text("\(change.relativeDifference > 0 ? "+" : "−")\(Int((abs(change.relativeDifference) * 100).rounded()))%")
+            .todayStateFont(12, weight: .bold, relativeTo: .subheadline)
+            .foregroundStyle(TodayStatePalette.change)
+            .fixedSize()
+            .accessibilityLabel("相较此前28天个人基线的变化")
+    }
+
+    private func importantChangeHeader(hasDetail: Bool) -> some View {
+        HStack(spacing: 7) {
+            TodayStateIcon(kind: .sparkles)
+            Text("今日变化")
+                .todayStateFont(14, weight: .bold, relativeTo: .subheadline)
+                .foregroundStyle(TodayStatePalette.ink)
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+            Spacer(minLength: 0)
+            if hasDetail {
+                Image(systemName: "chevron.right")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(TodayStatePalette.muted)
+            }
+        }
+        .frame(minHeight: 34)
+    }
+
+    private func changeSuggestion(_ text: String) -> some View {
+        HStack(alignment: .top, spacing: 7) {
+            TodayStateBolt()
+                .stroke(Color.orange, style: StrokeStyle(lineWidth: 1, lineCap: .round, lineJoin: .round))
+                .frame(width: 9, height: 12)
+                .padding(.top, 2)
+                .accessibilityHidden(true)
+            Text(text)
+                .todayStateFont(10.5, weight: .medium, relativeTo: .caption)
+                .foregroundStyle(TodayStatePalette.ink.opacity(0.82))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(9)
+        .background(.yellow.opacity(0.045), in: RoundedRectangle(cornerRadius: 13))
+        .overlay { RoundedRectangle(cornerRadius: 13).stroke(.yellow.opacity(0.22), lineWidth: 1) }
     }
 
     @ViewBuilder
@@ -613,17 +762,6 @@ struct TodayView: View {
             .background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 16))
     }
 
-    private var privacyNote: some View {
-        Label(
-            dataMode == .demo
-                ? "当前内容为本地演示数据，不会读取 Apple Health。"
-                : "只读取你选择分享的数据；目标和模块布局仅保存在本机。",
-            systemImage: "lock.shield.fill"
-        )
-        .font(.footnote)
-        .foregroundStyle(.secondary)
-    }
-
     private func sectionTitle(_ section: TodayDashboardSection) -> String {
         switch section {
         case .body: "身体"
@@ -711,6 +849,436 @@ private struct DateProgressGlyph: View {
             .clipShape(Circle())
         .frame(width: 38, height: 38)
         .opacity(overallPercentage == nil ? 0.35 : 1)
+    }
+}
+
+// Observe ratings only inside this card and the sheet, not the health dashboard.
+private struct TodayFeelingSummaryCard: View {
+    @ObservedObject var session: SubjectiveCheckInSession
+    let dataMode: HealthDataMode
+    let onEdit: () -> Void
+
+    private var record: DailyCheckIn? { dataMode == .live ? session.savedCheckIn : nil }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 5) {
+                TodayStateIcon(kind: .sun)
+                Text("今日感受")
+                    .todayStateFont(14, weight: .bold, relativeTo: .subheadline)
+                    .foregroundStyle(TodayStatePalette.ink)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+                Spacer(minLength: 0)
+                if dataMode == .demo {
+                    Text("演示").todayStateFont(11, relativeTo: .caption).foregroundStyle(TodayStatePalette.muted)
+                } else {
+                    Button(action: onEdit) {
+                        Text(record == nil ? "填写" : "修改")
+                            .todayStateFont(11, weight: .semibold, relativeTo: .caption)
+                            .foregroundStyle(TodayStatePalette.muted)
+                            .frame(minWidth: 44, minHeight: 44)
+                            .contentShape(RoundedRectangle(cornerRadius: 10))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(record == nil ? "记录今日感受" : "修改今日感受")
+                    .padding(.vertical, -5)
+                    .padding(.horizontal, -7)
+                }
+            }
+            .frame(minHeight: 34)
+            VStack(spacing: 7) {
+                ForEach(DailyFeelingField.allCases, id: \.self) { field in
+                    ratingRow(field)
+                }
+            }
+            .padding(.top, 11)
+            if dataMode == .live, let error = session.errorMessage {
+                Text(error).font(.caption).foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 8)
+            }
+            Spacer(minLength: 11)
+            Text(dataMode == .demo ? "演示 · 不记录感受" : (record == nil ? "记录此刻的真实感受" : "以你的感受为准"))
+                .todayStateFont(11, relativeTo: .caption)
+                .foregroundStyle(TodayStatePalette.muted)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .todayStateCard()
+        .accessibilityElement(children: .contain)
+    }
+
+    private func ratingRow(_ field: DailyFeelingField) -> some View {
+        let rating = record.map { field.rating(in: $0) }
+        let tone = field.tone(for: rating)
+        let emphasized = tone?.hasTint == true
+        let color = tone?.color ?? TodayStatePalette.muted
+        return HStack(spacing: 5) {
+            Text(field == .bodyFeeling ? "身体" : field.title)
+                .todayStateFont(12, relativeTo: .caption)
+                .foregroundStyle(emphasized ? color : TodayStatePalette.muted)
+            Spacer(minLength: 0)
+            if rating != nil {
+                Circle().fill(color).frame(width: 6, height: 6)
+            }
+            Text(rating.map { field.label(for: $0) } ?? "未记录")
+                .todayStateFont(13, weight: .semibold, relativeTo: .subheadline)
+                .foregroundStyle(emphasized ? color : (rating == nil ? TodayStatePalette.muted : TodayStatePalette.ink))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.horizontal, 10)
+        .frame(minHeight: 31)
+        .background(emphasized ? color.opacity(tone?.backgroundOpacity ?? 0) : TodayStatePalette.row, in: RoundedRectangle(cornerRadius: 13))
+        .overlay {
+            RoundedRectangle(cornerRadius: 13)
+                .stroke(emphasized ? color.opacity(tone?.borderOpacity ?? 0) : .clear, lineWidth: 1)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(field.title)，\(rating.map { field.label(for: $0) } ?? "未记录")")
+    }
+}
+
+private enum TodayStatePalette {
+    static let ink = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark ? .label : UIColor(red: 0.10, green: 0.18, blue: 0.34, alpha: 1)
+    })
+    static let muted = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark ? .secondaryLabel : UIColor(red: 0.56, green: 0.63, blue: 0.73, alpha: 1)
+    })
+    static let number = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark ? .label : UIColor(red: 0.06, green: 0.09, blue: 0.16, alpha: 1)
+    })
+    static let change = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark ? .systemGreen : UIColor(red: 0, green: 0.61, blue: 0.42, alpha: 1)
+    })
+    static let row = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark ? .tertiarySystemGroupedBackground : UIColor(red: 0.972, green: 0.980, blue: 0.989, alpha: 1)
+    })
+    static let teal = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark ? .systemTeal : UIColor(red: 0, green: 0.57, blue: 0.66, alpha: 1)
+    })
+}
+
+private struct TodayStateIcon: View {
+    enum Kind { case sun, sparkles }
+    let kind: Kind
+
+    var body: some View {
+        Circle()
+            .fill(LinearGradient(
+                colors: kind == .sun
+                    ? [Color(red: 1, green: 0.76, blue: 0.05), Color(red: 1, green: 0.37, blue: 0.48), Color(red: 0.98, green: 0.22, blue: 0.40)]
+                    : [Color(red: 0.23, green: 0.47, blue: 1), Color(red: 0.28, green: 0.65, blue: 0.98), Color(red: 0.10, green: 0.82, blue: 0.88)],
+                startPoint: .leading,
+                endPoint: .trailing
+            ))
+            .overlay {
+                Canvas { context, size in
+                    let scale = size.width / 100
+                    context.scaleBy(x: scale, y: scale)
+                    if kind == .sun {
+                        context.fill(Path(ellipseIn: CGRect(x: 42, y: 42, width: 16, height: 16)), with: .color(.white))
+                        var rays = Path()
+                        for index in 0..<8 {
+                            let angle = Double(index) * .pi / 4
+                            rays.move(to: CGPoint(x: 50 + cos(angle) * 15, y: 50 + sin(angle) * 15))
+                            rays.addLine(to: CGPoint(x: 50 + cos(angle) * 20, y: 50 + sin(angle) * 20))
+                        }
+                        context.stroke(rays, with: .color(.white.opacity(0.92)), style: StrokeStyle(lineWidth: 3.5, lineCap: .round))
+                    } else {
+                        context.fill(star(center: CGPoint(x: 50, y: 46), radius: 18), with: .color(.white))
+                        context.fill(star(center: CGPoint(x: 64, y: 65), radius: 7), with: .color(.white.opacity(0.85)))
+                    }
+                }
+            }
+            .frame(width: 34, height: 34)
+            .shadow(color: .black.opacity(0.07), radius: 2, y: 1)
+            .accessibilityHidden(true)
+    }
+
+    private func star(center: CGPoint, radius: CGFloat) -> Path {
+        let waist = radius * 0.25
+        return Path { path in
+            path.move(to: CGPoint(x: center.x, y: center.y - radius))
+            path.addLine(to: CGPoint(x: center.x + waist, y: center.y - waist))
+            path.addLine(to: CGPoint(x: center.x + radius, y: center.y))
+            path.addLine(to: CGPoint(x: center.x + waist, y: center.y + waist))
+            path.addLine(to: CGPoint(x: center.x, y: center.y + radius))
+            path.addLine(to: CGPoint(x: center.x - waist, y: center.y + waist))
+            path.addLine(to: CGPoint(x: center.x - radius, y: center.y))
+            path.addLine(to: CGPoint(x: center.x - waist, y: center.y - waist))
+            path.closeSubpath()
+        }
+    }
+}
+
+private struct TodayStateBolt: Shape {
+    func path(in rect: CGRect) -> Path {
+        Path { path in
+            path.move(to: CGPoint(x: rect.width * 0.64, y: 0))
+            path.addLine(to: CGPoint(x: 0, y: rect.height * 0.59))
+            path.addLine(to: CGPoint(x: rect.width * 0.44, y: rect.height * 0.59))
+            path.addLine(to: CGPoint(x: rect.width * 0.36, y: rect.height))
+            path.addLine(to: CGPoint(x: rect.width, y: rect.height * 0.40))
+            path.addLine(to: CGPoint(x: rect.width * 0.59, y: rect.height * 0.40))
+            path.closeSubpath()
+        }
+    }
+}
+
+// Match the reference's 484 × 568 cards without clipping longer or enlarged content.
+struct TodayStateCardsLayout: Layout {
+    static let spacing: CGFloat = 14
+
+    static func cardWidth(containerWidth: CGFloat) -> CGFloat {
+        max(0, (containerWidth - spacing) / 2)
+    }
+
+    static func cardHeight(width: CGFloat, contentHeight: CGFloat) -> CGFloat {
+        max(width * 568 / 484, contentHeight)
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? 372
+        let cardWidth = Self.cardWidth(containerWidth: width)
+        let contentHeight = subviews.map {
+            $0.sizeThatFits(ProposedViewSize(width: cardWidth, height: nil)).height
+        }.max() ?? 0
+        return CGSize(width: width, height: Self.cardHeight(width: cardWidth, contentHeight: contentHeight))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let width = Self.cardWidth(containerWidth: bounds.width)
+        for (index, subview) in subviews.enumerated() {
+            subview.place(
+                at: CGPoint(x: bounds.minX + CGFloat(index) * (width + Self.spacing), y: bounds.minY),
+                anchor: .topLeading,
+                proposal: ProposedViewSize(width: width, height: bounds.height)
+            )
+        }
+    }
+}
+
+private struct TodayStateFont: ViewModifier {
+    @ScaledMetric private var size: CGFloat
+    let weight: Font.Weight
+
+    init(size: CGFloat, weight: Font.Weight, relativeTo: Font.TextStyle) {
+        _size = ScaledMetric(wrappedValue: size, relativeTo: relativeTo)
+        self.weight = weight
+    }
+
+    func body(content: Content) -> some View {
+        content.font(.system(size: size, weight: weight))
+    }
+}
+
+private extension View {
+    func todayStateFont(_ size: CGFloat, weight: Font.Weight = .regular, relativeTo: Font.TextStyle) -> some View {
+        modifier(TodayStateFont(size: size, weight: weight, relativeTo: relativeTo))
+    }
+
+    func todayStateCard() -> some View {
+        self
+            .padding(.horizontal, 16)
+            .padding(.vertical, 15)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 26))
+            .overlay {
+                RoundedRectangle(cornerRadius: 26)
+                    .stroke(TodayStatePalette.muted.opacity(0.10), lineWidth: 1)
+            }
+    }
+}
+
+struct DailyFeelingSheet: View {
+    @ObservedObject private var coordinator: DailyCheckInCoordinator
+    @ObservedObject private var session: SubjectiveCheckInSession
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @State private var selectedDetent: PresentationDetent = .height(510)
+
+    init(coordinator: DailyCheckInCoordinator) {
+        self.coordinator = coordinator
+        self.session = coordinator.session
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 22) {
+                Label("今日感受", systemImage: "face.smiling")
+                    .font(.title2.weight(.bold))
+                    .padding(.top, 8)
+                SubjectiveRatingPicker(field: .energy, selection: $session.energy)
+                SubjectiveRatingPicker(field: .stress, selection: $session.stress)
+                SubjectiveRatingPicker(field: .bodyFeeling, selection: $session.bodyFeeling)
+                OptionalRecordNoteField(note: $session.note, characterLimit: DailyCheckIn.noteCharacterLimit) {
+                    selectedDetent = .large
+                }
+                if let notice = coordinator.notice {
+                    Text(notice).font(.subheadline).foregroundStyle(.secondary)
+                }
+                if let error = session.noteValidationMessage ?? session.errorMessage {
+                    Label(error, systemImage: "exclamationmark.circle")
+                        .font(.footnote)
+                        .foregroundStyle(.orange)
+                }
+                Label("仅保存在本机", systemImage: "lock.fill")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(24)
+        }
+        .scrollDismissesKeyboard(.interactively)
+        .safeAreaInset(edge: .bottom) {
+            HStack(spacing: 12) {
+                Button("暂不填写") { coordinator.dismiss() }
+                    .buttonStyle(FeelingActionButtonStyle(isPrimary: false))
+                Button("保存感受") { coordinator.save() }
+                    .buttonStyle(FeelingActionButtonStyle(isPrimary: true))
+                    .disabled(!session.canSave)
+            }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 14)
+            .background(.regularMaterial)
+        }
+        .presentationDetents(dynamicTypeSize.isAccessibilitySize ? [.large] : [.height(510), .large], selection: $selectedDetent)
+        .presentationDragIndicator(.visible)
+        .presentationCornerRadius(28)
+        .onAppear { coordinator.markPresented() }
+    }
+}
+
+// Visual emphasis reflects the user's rating, never an inferred health condition.
+enum DailyFeelingTone: Equatable {
+    case strongWarm, warm, neutral, cool, strongCool
+
+    var hasTint: Bool { self != .neutral }
+
+    var backgroundOpacity: Double {
+        switch self {
+        case .strongWarm, .strongCool: 0.10
+        case .warm, .cool: 0.05
+        case .neutral: 0
+        }
+    }
+
+    var borderOpacity: Double {
+        switch self {
+        case .strongWarm, .strongCool: 0.25
+        case .warm, .cool: 0.15
+        case .neutral: 0
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .strongWarm: .orange
+        case .warm: Color(red: 0.76, green: 0.54, blue: 0.10)
+        case .neutral: TodayStatePalette.muted
+        case .cool: TodayStatePalette.teal
+        case .strongCool: TodayStatePalette.change
+        }
+    }
+}
+
+enum DailyFeelingField: CaseIterable {
+    case energy, stress, bodyFeeling
+
+    var title: String {
+        switch self {
+        case .energy: "精力"
+        case .stress: "压力"
+        case .bodyFeeling: "身体感受"
+        }
+    }
+
+    func tone(for rating: SubjectiveRating?) -> DailyFeelingTone? {
+        guard let rating else { return nil }
+        let level = self == .stress ? 6 - rating.rawValue : rating.rawValue
+        switch level {
+        case 1: return .strongWarm
+        case 2: return .warm
+        case 3: return .neutral
+        case 4: return .cool
+        default: return .strongCool
+        }
+    }
+
+    func label(for rating: SubjectiveRating) -> String {
+        let labels: [String]
+        switch self {
+        case .energy: labels = ["很低", "偏低", "一般", "较好", "很好"]
+        case .stress: labels = ["很低", "偏低", "一般", "偏高", "很高"]
+        case .bodyFeeling: labels = ["不适", "疲劳", "一般", "轻松", "很好"]
+        }
+        return labels[rating.rawValue - 1]
+    }
+
+    func rating(in record: DailyCheckIn) -> SubjectiveRating {
+        switch self {
+        case .energy: record.energy
+        case .stress: record.stress
+        case .bodyFeeling: record.bodyFeeling
+        }
+    }
+}
+
+struct SubjectiveRatingPicker: View {
+    let field: DailyFeelingField
+    @Binding var selection: SubjectiveRating?
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(field.title)
+                .font(.subheadline.weight(.semibold))
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 7) {
+                    ForEach(SubjectiveRating.allCases, id: \.rawValue) { rating in
+                        let isSelected = selection == rating
+                        Button { selection = rating } label: {
+                            Text(field.label(for: rating))
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(isSelected ? .white : .primary)
+                                .frame(
+                                    minWidth: dynamicTypeSize.isAccessibilitySize ? 80 : 56,
+                                    minHeight: 46
+                                )
+                                .background(
+                                    isSelected ? Color.teal : Color.secondary.opacity(0.1),
+                                    in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                )
+                                .overlay {
+                                    RoundedRectangle(cornerRadius: 10)
+                                        .strokeBorder(isSelected ? Color.primary.opacity(0.4) : .clear, lineWidth: 2)
+                                }
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("\(field.title)，\(field.label(for: rating))，\(rating.rawValue) 分")
+                        .accessibilityValue(isSelected ? "已选择" : "未选择")
+                        .accessibilityAddTraits(isSelected ? .isSelected : [])
+                    }
+                }
+            }
+        }
+    }
+}
+
+struct FeelingActionButtonStyle: ButtonStyle {
+    let isPrimary: Bool
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.headline)
+            .frame(maxWidth: .infinity, minHeight: 48)
+            .padding(.horizontal, 8)
+            .foregroundStyle(isPrimary ? Color.white : Color.teal)
+            .background(
+                isPrimary ? Color.teal : Color.teal.opacity(0.1),
+                in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+            )
+            .opacity(isEnabled ? (configuration.isPressed ? 0.7 : 1) : 0.4)
     }
 }
 
@@ -1233,7 +1801,7 @@ private struct NightVitalCard: View {
     }
 }
 
-private struct TodayGoalSettingsView: View {
+struct TodayGoalSettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @Binding var goals: TodayDashboardGoals
 

@@ -68,6 +68,12 @@ ALLOWED_TREND_METRICS = [
     "heartRateVariability",
     "walkingRunningDistance",
 ]
+ALLOWED_CONTEXT_STATUSES = ["recorded", "notRecorded", "unavailable", "demoMode"]
+ALLOWED_CONTEXT_KINDS = [
+    "overtime", "deadline", "travel", "nightShift", "caffeine", "alcohol",
+    "illness", "highIntensityExercise", "nap", "caregiving", "deviceNotWorn",
+    "custom",
+]
 
 
 def response_schema() -> dict[str, Any]:
@@ -164,7 +170,8 @@ def validate_plan_evaluation(value: Any) -> dict[str, Any]:
     required = {
         "planID", "planTitle", "taskTitle", "status", "scheduledCount",
         "completedCount", "skippedCount", "completionRate", "userFeedback",
-        "metrics", "dataQualitySummary", "localVerdict",
+        "metrics", "contextStatus", "contextEvents", "dataQualitySummary",
+        "localVerdict",
     }
     if set(value) != required:
         raise ValueError("planEvaluation fields are invalid")
@@ -199,6 +206,29 @@ def validate_plan_evaluation(value: Any) -> dict[str, Any]:
         for key in ("beforeValidDayCount", "planValidDayCount"):
             if not isinstance(metric.get(key), int) or not 0 <= metric[key] <= 31:
                 raise ValueError("planEvaluation metric day count is invalid")
+    context_status = value["contextStatus"]
+    context_events = value["contextEvents"]
+    if context_status not in ALLOWED_CONTEXT_STATUSES:
+        raise ValueError("planEvaluation contextStatus is invalid")
+    if not isinstance(context_events, list) or len(context_events) > 12:
+        raise ValueError("planEvaluation contextEvents is invalid")
+    if (context_status == "recorded") != bool(context_events):
+        raise ValueError("planEvaluation context status does not match events")
+    for context_event in context_events:
+        if not isinstance(context_event, dict) or set(context_event) != {
+            "kind", "occurrenceCount", "highestIntensity"
+        }:
+            raise ValueError("planEvaluation context event is invalid")
+        if context_event["kind"] not in ALLOWED_CONTEXT_KINDS:
+            raise ValueError("planEvaluation context kind is invalid")
+        if (type(context_event["occurrenceCount"]) is not int
+                or not 1 <= context_event["occurrenceCount"] <= 2**63 - 1):
+            raise ValueError("planEvaluation context count is invalid")
+        intensity = context_event["highestIntensity"]
+        if intensity is not None and (
+            type(intensity) is not int or intensity not in (1, 2, 3)
+        ):
+            raise ValueError("planEvaluation context intensity is invalid")
     if value["localVerdict"] not in ALLOWED_EVALUATION_VERDICTS:
         raise ValueError("planEvaluation localVerdict is invalid")
     return value
@@ -236,7 +266,9 @@ def build_deepseek_request(
         "如有必要，只提出一个追问。usedMetrics 只能列出回答实际使用且"
         "事实包中可用的指标。必须输出 JSON；uncertainty 必须是单个字符串，不能是数组。"
         "当输入包含 planEvaluation 时，这是计划结束评估。只使用其中由本地程序计算的完成率、"
-        "用户反馈、指标对照和数据质量；用户反馈是主观感受，不能当作客观事实。summary 必须以"
+        "用户反馈、指标对照、数据质量和结构化同期生活背景；用户反馈是主观感受，不能当作客观事实。"
+        "生活背景只包含事件类型、次数和可选强度；只能说同期出现，不能写成计划效果或指标变化的原因。"
+        "contextStatus 为 unavailable 时不得当作没有生活事件。summary 必须以"
         "‘可能有帮助’‘暂未观察到明显变化’‘执行不足，无法判断’‘数据不足，建议继续观察’"
         "或‘主观和客观结果不同步’之一为核心判断，并说明是否值得继续。不得把相关变化写成计划造成的结果。"
         "此时 suggestedAction 和 followUpQuestion 必须为 null，不得提出新的微计划。"

@@ -6,6 +6,13 @@ enum HealthDataQualityThresholds {
     static let baselineExpectedDays = 28
     static let baselineMinimumValidDays = 14
     static let inventoryExpectedDays = 90
+    static let singleDayOutlierMADMultiplier = 3.5
+    static let singleDayOutlierThresholdVersion = "s07-outlier-v1"
+    static let trendMagnitudeMADMultiplier = 2.5
+    static let trendMinimumAlignedDays = 3
+    static let trendMinimumAlignedFraction = 0.5
+    static let trendAlignmentThresholdFraction = 0.5
+    static let trendThresholdVersion = "s07-trend-v1"
 }
 
 struct HealthDataQualityReport: Equatable, Sendable {
@@ -201,14 +208,26 @@ enum PreferredHealthMetricSourceSelector {
         if bestCategory == .other, preferredGroups.count > 1 {
             return nil
         }
-        return preferredGroups.max { first, second in
+        return preferredGroups.sorted { first, second in
             let firstLatest = first.value.map(\.endDate).max() ?? .distantPast
             let secondLatest = second.value.map(\.endDate).max() ?? .distantPast
             if firstLatest != secondLatest {
-                return firstLatest < secondLatest
+                return firstLatest > secondLatest
             }
-            return first.value.count < second.value.count
-        }?.value
+            if first.value.count != second.value.count {
+                return first.value.count > second.value.count
+            }
+            return stableIdentity(for: first.key) < stableIdentity(for: second.key)
+        }.first?.value
+    }
+
+    private static func stableIdentity(for source: HealthMetricSource) -> String {
+        [
+            source.sourceName,
+            source.bundleIdentifier ?? "",
+            source.deviceName ?? "",
+            source.productType ?? ""
+        ].joined(separator: "\u{1F}")
     }
 }
 

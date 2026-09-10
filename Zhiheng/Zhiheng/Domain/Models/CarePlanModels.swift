@@ -379,6 +379,80 @@ enum MicroPlanEvaluationDirection: String, Codable, Equatable, Sendable {
     case unfavorable
 }
 
+enum MicroPlanEvaluationContextStatus: String, Codable, Equatable, Sendable {
+    case recorded
+    case notRecorded
+    case unavailable
+    case demoMode
+}
+
+struct MicroPlanEvaluationContextEventFact: Codable, Equatable, Sendable {
+    let kind: ContextEventKind
+    let occurrenceCount: Int
+    let highestIntensity: ContextEventIntensity?
+}
+
+/// Aggregate-only context for one plan window. Free-form labels, notes and
+/// record identifiers intentionally remain in SubjectiveRecordStore.
+struct MicroPlanEvaluationContext: Equatable, Sendable {
+    let status: MicroPlanEvaluationContextStatus
+    let events: [MicroPlanEvaluationContextEventFact]
+
+    static let notRecorded = MicroPlanEvaluationContext(
+        status: .notRecorded,
+        events: []
+    )
+    static let unavailable = MicroPlanEvaluationContext(
+        status: .unavailable,
+        events: []
+    )
+    static let demoMode = MicroPlanEvaluationContext(
+        status: .demoMode,
+        events: []
+    )
+
+    static func recorded(_ sourceEvents: [ContextEvent]) -> Self {
+        let facts: [MicroPlanEvaluationContextEventFact] = ContextEventKind
+            .allCases.compactMap { kind in
+                let matches = sourceEvents.filter { $0.kind == kind }
+                guard !matches.isEmpty else { return nil }
+                let highestIntensity = matches.compactMap(\.intensity).max {
+                    $0.rawValue < $1.rawValue
+                }
+                return MicroPlanEvaluationContextEventFact(
+                    kind: kind,
+                    occurrenceCount: matches.count,
+                    highestIntensity: highestIntensity
+                )
+            }
+        return facts.isEmpty
+            ? .notRecorded
+            : MicroPlanEvaluationContext(status: .recorded, events: facts)
+    }
+
+    var totalEventCount: Int {
+        events.reduce(0) { $0 + $1.occurrenceCount }
+    }
+
+    var summary: String {
+        switch status {
+        case .recorded:
+            let names = events.map { fact in
+                fact.occurrenceCount > 1
+                    ? "\(fact.kind.title) \(fact.occurrenceCount) 次"
+                    : fact.kind.title
+            }.joined(separator: "、")
+            return "计划期间记录了 \(totalEventCount) 条同期生活背景：\(names)。这些记录只表示同期出现，不代表原因。"
+        case .notRecorded:
+            return "计划期间未记录生活背景；未记录不等于没有相关情况。"
+        case .unavailable:
+            return "计划期间的生活背景暂时无法读取，不会把未知情况当作没有。"
+        case .demoMode:
+            return "演示模式不读取真实生活背景。"
+        }
+    }
+}
+
 struct MicroPlanEvaluationMetricFact: Codable, Equatable, Sendable {
     let metric: MicroPlanTrendMetric
     let healthMetric: HealthMetricType?
@@ -401,8 +475,17 @@ struct MicroPlanEvaluationFactPack: Codable, Equatable, Sendable {
     let completionRate: Double?
     let userFeedback: [String]
     let metrics: [MicroPlanEvaluationMetricFact]
+    let contextStatus: MicroPlanEvaluationContextStatus
+    let contextEvents: [MicroPlanEvaluationContextEventFact]
     let dataQualitySummary: String
     let localVerdict: MicroPlanEvaluationVerdict
+
+    var contextSummary: String {
+        MicroPlanEvaluationContext(
+            status: contextStatus,
+            events: contextEvents
+        ).summary
+    }
 }
 
 struct MicroPlanEvaluationPresentation: Equatable, Sendable {
@@ -419,7 +502,8 @@ enum MicroPlanEvaluationFactory {
         plan: MicroPlan,
         progress: MicroPlanProgress,
         outcomes: [PlanOutcomeRecord],
-        trends: [MicroPlanTrendPresentation]
+        trends: [MicroPlanTrendPresentation],
+        context: MicroPlanEvaluationContext = .notRecorded
     ) -> MicroPlanEvaluationPresentation {
         let metricFacts = trends.compactMap { trend -> MicroPlanEvaluationMetricFact? in
             guard trend.hasFrozenBaseline,
@@ -447,6 +531,8 @@ enum MicroPlanEvaluationFactory {
         if progress.scheduledCount == 0
             || (progress.completionFraction ?? 0) < minimumCompletionRate {
             verdict = .insufficientExecution
+        } else if context.status == .unavailable {
+            verdict = .insufficientData
         } else if metricFacts.isEmpty {
             verdict = .insufficientData
         } else if metricFacts.filter({ $0.direction == .favorable }).count
@@ -479,12 +565,14 @@ enum MicroPlanEvaluationFactory {
             completionRate: progress.completionFraction,
             userFeedback: feedback,
             metrics: metricFacts,
+            contextStatus: context.status,
+            contextEvents: context.events,
             dataQualitySummary: qualitySummary,
             localVerdict: verdict
         )
         return MicroPlanEvaluationPresentation(
             factPack: factPack,
-            summary: summary(for: verdict)
+            summary: summary(for: verdict, context: context)
         )
     }
 
@@ -504,8 +592,11 @@ enum MicroPlanEvaluationFactory {
         return favorable ? .favorable : .unfavorable
     }
 
-    private static func summary(for verdict: MicroPlanEvaluationVerdict) -> String {
-        switch verdict {
+    private static func summary(
+        for verdict: MicroPlanEvaluationVerdict,
+        context: MicroPlanEvaluationContext
+    ) -> String {
+        let verdictSummary = switch verdict {
         case .mayHaveHelped:
             "完成率达到评估门槛，相关指标也出现同方向变化。可以先记为可能有帮助，但不能说明是计划造成的。"
         case .noClearChange:
@@ -516,6 +607,16 @@ enum MicroPlanEvaluationFactory {
             "相关健康数据还不足以形成可靠对照，建议继续观察。"
         case .subjectiveObjectiveMismatch:
             "你的反馈和客观指标没有同步变化，两边都值得保留，暂时不要用一边否定另一边。"
+        }
+        switch context.status {
+        case .recorded:
+            return verdictSummary + " 计划期间还记录了同期生活背景，它们可能影响观察，但不能据此判断原因。"
+        case .notRecorded:
+            return verdictSummary + " 计划期间未记录生活背景；未记录不等于没有相关情况。"
+        case .unavailable:
+            return verdictSummary + " 生活背景暂时无法读取，本次不会把未知情况当作没有。"
+        case .demoMode:
+            return verdictSummary + " 当前为演示评估，不读取真实生活背景。"
         }
     }
 }

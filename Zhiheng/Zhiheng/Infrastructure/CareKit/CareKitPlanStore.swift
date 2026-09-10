@@ -288,6 +288,7 @@ actor CareKitPlanStore: CarePlanService {
 
     func outcomeRecords(for taskID: CareTaskID) async throws -> [PlanOutcomeRecord] {
         do {
+            _ = try await task(with: taskID)
             let outcomes = try await storedOutcomes(for: taskID)
             var records = [PlanOutcomeRecord]()
             for outcome in outcomes {
@@ -485,6 +486,28 @@ actor CareKitPlanStore: CarePlanService {
             updatedMetadata.removeValue(forKey: MetadataKey.pausedAt)
             updatedMetadata.removeValue(forKey: MetadataKey.pauseScheduleStart)
             try await updatePlan(storedPlan, metadata: updatedMetadata)
+        } catch let error as CarePlanServiceError {
+            throw error
+        } catch {
+            throw CarePlanServiceError.persistenceFailed
+        }
+    }
+
+    func deletePlan(_ planID: CarePlanID) async throws {
+        do {
+            let storedPlan = try await carePlan(with: planID)
+            let plan = try decode(storedPlan)
+            let storedTask = try await task(with: plan.draft.taskID)
+            let outcomes = try await storedOutcomes(for: plan.draft.taskID)
+
+            // CareKit deletions create revision tombstones. A care-plan tombstone
+            // does not implicitly hide the independently versioned task or its
+            // outcomes, so every object owned by this plan must be deleted.
+            if !outcomes.isEmpty {
+                _ = try await store.deleteOutcomes(outcomes)
+            }
+            _ = try await store.deleteTask(storedTask)
+            _ = try await store.deleteCarePlan(storedPlan)
         } catch let error as CarePlanServiceError {
             throw error
         } catch {

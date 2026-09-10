@@ -29,6 +29,7 @@ protocol CarePlanService: Sendable {
     func pausePlan(_ planID: CarePlanID, at date: Date) async throws
     func resumePlan(_ planID: CarePlanID, at date: Date) async throws
     func endPlan(_ planID: CarePlanID, at date: Date) async throws
+    func deletePlan(_ planID: CarePlanID) async throws
 }
 
 enum PlanBaselineStoreError: Error, Equatable {

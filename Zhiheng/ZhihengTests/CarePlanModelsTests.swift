@@ -414,6 +414,126 @@ final class CarePlanModelsTests: XCTestCase {
         )
     }
 
+    func testEvaluationContextAggregatesOnlyStructuredFactsInCanonicalOrder() throws {
+        let referenceDate = Date(timeIntervalSince1970: 1_800_000_000)
+        let events = [
+            try ContextEvent(
+                kind: .travel,
+                startedAt: referenceDate,
+                intensity: .low,
+                note: "不应进入评估事实包"
+            ),
+            try ContextEvent(
+                kind: .overtime,
+                startedAt: referenceDate,
+                intensity: .medium
+            ),
+            try ContextEvent(
+                kind: .overtime,
+                startedAt: referenceDate,
+                intensity: .high
+            ),
+            try ContextEvent(
+                kind: .custom,
+                customLabel: "不应上传的自定义名称",
+                startedAt: referenceDate,
+                note: "不应上传的备注"
+            ),
+        ]
+
+        let context = MicroPlanEvaluationContext.recorded(events)
+
+        XCTAssertEqual(context.status, .recorded)
+        XCTAssertEqual(context.events.map(\.kind), [.overtime, .travel, .custom])
+        XCTAssertEqual(context.events.map(\.occurrenceCount), [2, 1, 1])
+        XCTAssertEqual(context.events.map(\.highestIntensity), [.high, .low, nil])
+
+        let plan = try evaluationPlan()
+        let progress = try MicroPlanProgress(
+            scheduledCount: 5,
+            completedCount: 5,
+            skippedCount: 0
+        )
+        let factPack = MicroPlanEvaluationFactory.make(
+            plan: plan,
+            progress: progress,
+            outcomes: [],
+            trends: [evaluationTrend(change: 1)],
+            context: context
+        ).factPack
+        let encoded = try XCTUnwrap(
+            String(data: JSONEncoder().encode(factPack), encoding: .utf8)
+        )
+        XCTAssertFalse(encoded.contains("customLabel"))
+        XCTAssertFalse(encoded.contains("note"))
+        XCTAssertFalse(encoded.contains("不应上传"))
+    }
+
+    func testRecordedContextDoesNotChangePositiveVerdictOrClaimCausality() throws {
+        let plan = try evaluationPlan()
+        let progress = try MicroPlanProgress(
+            scheduledCount: 5,
+            completedCount: 4,
+            skippedCount: 1
+        )
+        let context = MicroPlanEvaluationContext.recorded([
+            try ContextEvent(
+                kind: .deadline,
+                startedAt: plan.draft.startDate,
+                intensity: .high
+            ),
+        ])
+
+        let evaluation = MicroPlanEvaluationFactory.make(
+            plan: plan,
+            progress: progress,
+            outcomes: [],
+            trends: [evaluationTrend(change: 1)],
+            context: context
+        )
+
+        XCTAssertEqual(evaluation.verdict, .mayHaveHelped)
+        XCTAssertTrue(evaluation.summary.contains("不能据此判断原因"))
+        XCTAssertTrue(evaluation.factPack.contextSummary.contains("只表示同期出现"))
+    }
+
+    func testUnavailableContextDowngradesOtherwiseAssessableEvaluation() throws {
+        let plan = try evaluationPlan()
+        let progress = try MicroPlanProgress(
+            scheduledCount: 5,
+            completedCount: 5,
+            skippedCount: 0
+        )
+        let available = MicroPlanEvaluationFactory.make(
+            plan: plan,
+            progress: progress,
+            outcomes: [],
+            trends: [evaluationTrend(change: 1)],
+            context: .notRecorded
+        )
+        let unavailable = MicroPlanEvaluationFactory.make(
+            plan: plan,
+            progress: progress,
+            outcomes: [],
+            trends: [evaluationTrend(change: 1)],
+            context: .unavailable
+        )
+
+        XCTAssertEqual(available.verdict, .mayHaveHelped)
+        XCTAssertEqual(unavailable.verdict, .insufficientData)
+        XCTAssertTrue(unavailable.summary.contains("未知情况"))
+    }
+
+    func testEmptyFailureAndDemoContextRemainDistinct() {
+        XCTAssertTrue(MicroPlanEvaluationContext.notRecorded.summary.contains("未记录不等于没有"))
+        XCTAssertTrue(MicroPlanEvaluationContext.unavailable.summary.contains("无法读取"))
+        XCTAssertTrue(MicroPlanEvaluationContext.demoMode.summary.contains("不读取真实"))
+        XCTAssertNotEqual(
+            MicroPlanEvaluationContext.notRecorded.summary,
+            MicroPlanEvaluationContext.unavailable.summary
+        )
+    }
+
     private func evaluationPlan() throws -> MicroPlan {
         let template = try XCTUnwrap(
             MicroPlanTemplateLibrary.template(for: .afternoonWalk)

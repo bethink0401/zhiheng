@@ -8,6 +8,128 @@ struct MicroPlanHistoryEntry: Identifiable {
     var id: CarePlanID { plan.draft.id }
 }
 
+enum EffectiveMethodsViewState: Equatable {
+    case idle
+    case loading
+    case demoMode
+    case empty
+    case loaded([EffectiveMethodCardPresentation])
+    case failed
+}
+
+enum EffectiveMethodRestartAvailability: Equatable {
+    case checking
+    case available
+    case activePlanExists
+    case unavailable
+    case demoMode
+}
+
+private struct EffectiveMethodRunEvaluationInput: Sendable {
+    let run: EffectiveMethodCandidateRun
+    let baseline: MicroPlanBaselineSnapshot?
+    let baselineReadFailed: Bool
+    let context: MicroPlanEvaluationContext
+    let subjectiveChange: EffectiveMethodSubjectiveRunChange
+}
+
+private struct EffectiveMethodCandidateEvaluationInput: Sendable {
+    let candidate: EffectiveMethodCandidate
+    let runs: [EffectiveMethodRunEvaluationInput]
+}
+
+private enum EffectiveMethodEvaluationWorker {
+    static func makeCards(
+        from inputs: [EffectiveMethodCandidateEvaluationInput],
+        snapshot: HealthDataSnapshot?,
+        dataMode: HealthDataMode,
+        referenceDate: Date
+    ) -> [EffectiveMethodCardPresentation] {
+        inputs.map { input in
+            EffectiveMethodCardPresentationFactory.make(
+                candidate: input.candidate,
+                evaluations: input.runs.map {
+                    evaluate(
+                        $0,
+                        snapshot: snapshot,
+                        dataMode: dataMode,
+                        referenceDate: referenceDate
+                    )
+                }
+            )
+        }
+    }
+
+    private static func evaluate(
+        _ input: EffectiveMethodRunEvaluationInput,
+        snapshot: HealthDataSnapshot?,
+        dataMode: HealthDataMode,
+        referenceDate: Date
+    ) -> EffectiveMethodRunEvaluationFact {
+        let run = input.run
+        let trends = MicroPlanTrendPresentationFactory.make(
+            plan: run.plan,
+            snapshot: snapshot,
+            baseline: input.baseline,
+            dataMode: dataMode,
+            referenceDate: referenceDate
+        )
+        let progress: MicroPlanProgress
+        do {
+            progress = try MicroPlanProgress(
+                scheduledCount: run.completion.scheduledCount,
+                completedCount: run.completion.completedCount,
+                skippedCount: run.completion.skippedCount
+            )
+        } catch {
+            return EffectiveMethodRunEvaluationFact(
+                carePlanID: run.plan.draft.id,
+                verdict: .insufficientData,
+                dataQuality: .unavailable,
+                objectiveDataQuality: .unavailable,
+                subjectiveChange: input.subjectiveChange
+            )
+        }
+        let evaluation = MicroPlanEvaluationFactory.make(
+            plan: run.plan,
+            progress: progress,
+            outcomes: run.outcomes,
+            trends: trends,
+            context: input.context
+        )
+        let relevantMetrics = Set(trends.compactMap(\.metric.healthMetric))
+        let hasReadFailure = relevantMetrics.contains { metric in
+            guard let state = snapshot?[metric] else { return false }
+            if case .failed = state { return true }
+            return false
+        }
+        let objectiveQuality: EffectiveMethodRunDataQuality
+        if input.baselineReadFailed || hasReadFailure {
+            objectiveQuality = .unavailable
+        } else if evaluation.factPack.metrics.isEmpty {
+            objectiveQuality = .insufficient
+        } else {
+            objectiveQuality = .sufficient
+        }
+        let quality: EffectiveMethodRunDataQuality
+        if input.context.status == .unavailable || objectiveQuality == .unavailable {
+            quality = .unavailable
+        } else if objectiveQuality == .insufficient {
+            quality = .insufficient
+        } else {
+            quality = .sufficient
+        }
+        return EffectiveMethodRunEvaluationFact(
+            carePlanID: run.plan.draft.id,
+            verdict: evaluation.verdict,
+            dataQuality: quality,
+            objectiveDataQuality: objectiveQuality,
+            objectiveMetrics: evaluation.factPack.metrics,
+            subjectiveChange: input.subjectiveChange
+        )
+    }
+}
+
 @MainActor
 final class MicroPlanSession: ObservableObject {
     @Published private(set) var activePlan: MicroPlan?
@@ -18,6 +140,11 @@ final class MicroPlanSession: ObservableObject {
     @Published private(set) var outcomeRecords = [PlanOutcomeRecord]()
     @Published private(set) var history = [MicroPlanHistoryEntry]()
     @Published private(set) var baselineSnapshot: MicroPlanBaselineSnapshot?
+    @Published private(set) var evaluationContext = MicroPlanEvaluationContext.unavailable
+    @Published private(set) var effectiveMethodsState = EffectiveMethodsViewState.idle
+    @Published private(set) var hiddenEffectiveMethods = [EffectiveMethodCardPresentation]()
+    @Published private(set) var effectiveMethodRestartAvailability =
+        EffectiveMethodRestartAvailability.checking
     @Published private(set) var isBusy = false
     @Published private(set) var isEvaluating = false
     @Published private(set) var aiEvaluation: HealthAIResponse?
@@ -27,28 +154,184 @@ final class MicroPlanSession: ObservableObject {
     private let service: any CarePlanService
     private let baselineStore: any PlanBaselineStore
     private let evaluationService: any AIService
+    private let subjectiveRecordStore: (any SubjectiveRecordStore)?
+    private let effectiveMethodVisibilityStore: any EffectiveMethodVisibilityStore
     private var evaluatedPlanID: CarePlanID?
+    private var currentDataMode = HealthDataMode.live
+    private var effectiveMethodsRefreshID = UUID()
+    private var allEffectiveMethodCards = [EffectiveMethodCardPresentation]()
+    private var hiddenEffectiveMethodTemplateIDs = Set<MicroPlanTemplateID>()
+    private var loadedStateDataMode: HealthDataMode?
 
     var displayedPlan: MicroPlan? { activePlan ?? mostRecentPlan }
 
     init(
         service: any CarePlanService,
         baselineStore: any PlanBaselineStore = InMemoryPlanBaselineStore(),
-        evaluationService: any AIService = PersonalAIService()
+        evaluationService: any AIService = PersonalAIService(),
+        subjectiveRecordStore: (any SubjectiveRecordStore)? = nil,
+        effectiveMethodVisibilityStore: any EffectiveMethodVisibilityStore =
+            InMemoryEffectiveMethodVisibilityStore()
     ) {
         self.service = service
         self.baselineStore = baselineStore
         self.evaluationService = evaluationService
+        self.subjectiveRecordStore = subjectiveRecordStore
+        self.effectiveMethodVisibilityStore = effectiveMethodVisibilityStore
     }
 
-    func refresh(referenceDate: Date = Date()) async {
+    func refresh(
+        referenceDate: Date = Date(),
+        dataMode: HealthDataMode = .live
+    ) async {
         guard !isBusy else { return }
+        currentDataMode = dataMode
         isBusy = true
         defer { isBusy = false }
         do {
             try await loadState(referenceDate: referenceDate)
+            loadedStateDataMode = dataMode
         } catch {
             present(error)
+        }
+    }
+
+    func refreshIfNeeded(
+        referenceDate: Date = Date(),
+        dataMode: HealthDataMode = .live
+    ) async {
+        guard loadedStateDataMode != dataMode else { return }
+        await refresh(referenceDate: referenceDate, dataMode: dataMode)
+    }
+
+    func refreshEffectiveMethods(
+        snapshot: HealthDataSnapshot?,
+        dataMode: HealthDataMode,
+        referenceDate: Date = Date()
+    ) async {
+        currentDataMode = dataMode
+        let refreshID = UUID()
+        effectiveMethodsRefreshID = refreshID
+        guard dataMode == .live else {
+            allEffectiveMethodCards = []
+            hiddenEffectiveMethods = []
+            hiddenEffectiveMethodTemplateIDs = []
+            effectiveMethodsState = .demoMode
+            effectiveMethodRestartAvailability = .demoMode
+            return
+        }
+
+        effectiveMethodsState = .loading
+        effectiveMethodRestartAvailability = .checking
+        do {
+            let activePlan = try await service.activePlan()
+            guard effectiveMethodsRefreshID == refreshID else { return }
+            effectiveMethodRestartAvailability = activePlan == nil
+                ? .available : .activePlanExists
+        } catch {
+            guard effectiveMethodsRefreshID == refreshID else { return }
+            effectiveMethodRestartAvailability = .unavailable
+        }
+        do {
+            let candidates = try await EffectiveMethodCandidateGenerator.load(
+                from: service
+            )
+            guard effectiveMethodsRefreshID == refreshID else { return }
+            guard !candidates.isEmpty else {
+                allEffectiveMethodCards = []
+                hiddenEffectiveMethods = []
+                hiddenEffectiveMethodTemplateIDs = []
+                effectiveMethodsState = .empty
+                return
+            }
+
+            var evaluationInputs = [EffectiveMethodCandidateEvaluationInput]()
+            for candidate in candidates {
+                var runInputs = [EffectiveMethodRunEvaluationInput]()
+                for run in candidate.runs {
+                    runInputs.append(effectiveMethodEvaluationInput(
+                        for: run,
+                        dataMode: dataMode
+                    ))
+                }
+                evaluationInputs.append(EffectiveMethodCandidateEvaluationInput(
+                    candidate: candidate,
+                    runs: runInputs
+                ))
+            }
+            let cards = await Task.detached(priority: .userInitiated) {
+                EffectiveMethodEvaluationWorker.makeCards(
+                    from: evaluationInputs,
+                    snapshot: snapshot,
+                    dataMode: dataMode,
+                    referenceDate: referenceDate
+                )
+            }.value
+            guard effectiveMethodsRefreshID == refreshID else { return }
+            let hiddenIDs = try effectiveMethodVisibilityStore.hiddenTemplateIDs()
+            guard effectiveMethodsRefreshID == refreshID else { return }
+            allEffectiveMethodCards = cards
+            hiddenEffectiveMethodTemplateIDs = hiddenIDs
+            applyEffectiveMethodVisibility()
+        } catch {
+            guard effectiveMethodsRefreshID == refreshID else { return }
+            allEffectiveMethodCards = []
+            hiddenEffectiveMethods = []
+            hiddenEffectiveMethodTemplateIDs = []
+            effectiveMethodsState = .failed
+        }
+    }
+
+    @discardableResult
+    func setEffectiveMethodHidden(
+        _ isHidden: Bool,
+        templateID: MicroPlanTemplateID,
+        at date: Date = Date()
+    ) -> Bool {
+        guard currentDataMode == .live else {
+            showsError = true
+            message = "演示模式不会修改真实方法的显示设置。"
+            return false
+        }
+        guard allEffectiveMethodCards.contains(where: {
+            $0.sourcePlanTemplateID == templateID
+        }) else {
+            showsError = true
+            message = "这个方法暂时不在可管理列表中，请重新读取后再试。"
+            return false
+        }
+        do {
+            try effectiveMethodVisibilityStore.setHidden(
+                isHidden,
+                templateID: templateID,
+                at: date
+            )
+            if isHidden {
+                hiddenEffectiveMethodTemplateIDs.insert(templateID)
+                message = "方法已隐藏。计划、打卡和评估历史仍完整保留。"
+            } else {
+                hiddenEffectiveMethodTemplateIDs.remove(templateID)
+                message = "方法已恢复显示。"
+            }
+            applyEffectiveMethodVisibility()
+            showsError = false
+            return true
+        } catch {
+            showsError = true
+            message = isHidden
+                ? "方法暂时无法隐藏，原列表没有改变。"
+                : "方法暂时无法恢复，原列表没有改变。"
+            return false
+        }
+    }
+
+    private func applyEffectiveMethodVisibility() {
+        let hiddenIDs = hiddenEffectiveMethodTemplateIDs
+        effectiveMethodsState = .loaded(allEffectiveMethodCards.filter {
+            !hiddenIDs.contains($0.sourcePlanTemplateID)
+        })
+        hiddenEffectiveMethods = allEffectiveMethodCards.filter {
+            hiddenIDs.contains($0.sourcePlanTemplateID)
         }
     }
 
@@ -59,32 +342,64 @@ final class MicroPlanSession: ObservableObject {
         referenceDate: Date = Date()
     ) async -> Bool {
         guard !isBusy else { return false }
-        guard let template = MicroPlanTemplateLibrary.template(
-            for: action.templateID
-        ) else {
-            present(CarePlanModelError.invalidPlanDateRange)
-            return false
-        }
-
+        currentDataMode = dataMode
         isBusy = true
         defer { isBusy = false }
         do {
-            let draft = try template.makeDraft(referenceDate: referenceDate)
-            let baseline = MicroPlanTrendPresentationFactory.captureBaseline(
-                for: draft,
-                snapshot: healthSnapshot,
+            try await createPlan(
+                templateID: action.templateID,
+                healthSnapshot: healthSnapshot,
                 dataMode: dataMode,
-                capturedAt: referenceDate
+                referenceDate: referenceDate
             )
-            try baselineStore.save(baseline)
+            message = "微计划已经开始，今天完成后记得回来打卡。"
+            showsError = false
+            return true
+        } catch {
+            present(error)
+            return false
+        }
+    }
+
+    func restartEffectiveMethod(
+        templateID: MicroPlanTemplateID,
+        healthSnapshot: HealthDataSnapshot?,
+        dataMode: HealthDataMode,
+        referenceDate: Date = Date()
+    ) async -> Bool {
+        guard !isBusy else { return false }
+        guard dataMode == .live else {
+            effectiveMethodRestartAvailability = .demoMode
+            showsError = true
+            message = "演示模式不会创建真实微计划。切换回真实数据后再试。"
+            return false
+        }
+
+        currentDataMode = dataMode
+        isBusy = true
+        effectiveMethodRestartAvailability = .checking
+        defer { isBusy = false }
+        do {
+            let activePlan: MicroPlan?
             do {
-                _ = try await service.createPlan(from: draft)
+                activePlan = try await service.activePlan()
             } catch {
-                try? baselineStore.delete(for: draft.id)
+                effectiveMethodRestartAvailability = .unavailable
                 throw error
             }
-            try await loadState(referenceDate: referenceDate)
-            message = "微计划已经开始，今天完成后记得回来打卡。"
+            guard activePlan == nil else {
+                effectiveMethodRestartAvailability = .activePlanExists
+                throw CarePlanServiceError.activePlanExists
+            }
+            effectiveMethodRestartAvailability = .available
+            try await createPlan(
+                templateID: templateID,
+                healthSnapshot: healthSnapshot,
+                dataMode: dataMode,
+                referenceDate: referenceDate
+            )
+            effectiveMethodRestartAvailability = .activePlanExists
+            message = "新的微计划已经开始。这次会作为独立执行记录，用来继续观察这个方法。"
             showsError = false
             return true
         } catch {
@@ -205,8 +520,38 @@ final class MicroPlanSession: ObservableObject {
         }
     }
 
+    func delete(_ plan: MicroPlan, referenceDate: Date = Date()) async {
+        guard !isBusy else { return }
+        isBusy = true
+        defer { isBusy = false }
+        do {
+            let baseline = try baselineStore.baseline(for: plan.draft.id)
+            try baselineStore.delete(for: plan.draft.id)
+            do {
+                try await service.deletePlan(plan.draft.id)
+            } catch {
+                if let baseline {
+                    do {
+                        try baselineStore.save(baseline)
+                    } catch {
+                        throw PlanBaselineStoreError.persistenceFailed
+                    }
+                }
+                throw error
+            }
+            try await loadState(referenceDate: referenceDate)
+            message = "计划、打卡、反馈和评估基线已从本机删除。"
+            showsError = false
+        } catch {
+            present(error)
+        }
+    }
+
     private func loadState(referenceDate: Date) async throws {
         let plan = try await service.activePlan()
+        effectiveMethodRestartAvailability = currentDataMode == .live
+            ? (plan == nil ? .available : .activePlanExists)
+            : .demoMode
         let plans = try await service.planHistory()
         activePlan = plan
         mostRecentPlan = plans.first
@@ -227,9 +572,15 @@ final class MicroPlanSession: ObservableObject {
             aiEvaluation = nil
             evaluatedPlanID = nil
             baselineSnapshot = nil
+            evaluationContext = .unavailable
             return
         }
         baselineSnapshot = try baselineStore.baseline(for: displayedPlan.draft.id)
+        evaluationContext = loadEvaluationContext(
+            for: displayedPlan,
+            baseline: baselineSnapshot,
+            dataMode: currentDataMode
+        )
         progress = try await service.progress(for: displayedPlan.draft.id)
         outcomeRecords = try await service.outcomeRecords(
             for: displayedPlan.draft.taskID
@@ -254,6 +605,158 @@ final class MicroPlanSession: ObservableObject {
         let todayRecord = outcomeRecords.first { $0.occurrenceIndex == index }
         todayOutcomeState = todayRecord?.state
         todayFeedback = todayRecord?.feedback
+    }
+
+    private func createPlan(
+        templateID: MicroPlanTemplateID,
+        healthSnapshot: HealthDataSnapshot?,
+        dataMode: HealthDataMode,
+        referenceDate: Date
+    ) async throws {
+        guard let template = MicroPlanTemplateLibrary.template(for: templateID) else {
+            throw CarePlanModelError.invalidPlanDateRange
+        }
+        let draft = try template.makeDraft(referenceDate: referenceDate)
+        let baseline = MicroPlanTrendPresentationFactory.captureBaseline(
+            for: draft,
+            snapshot: healthSnapshot,
+            dataMode: dataMode,
+            capturedAt: referenceDate
+        )
+        try baselineStore.save(baseline)
+        do {
+            _ = try await service.createPlan(from: draft)
+        } catch {
+            try? baselineStore.delete(for: draft.id)
+            throw error
+        }
+        try await loadState(referenceDate: referenceDate)
+    }
+
+    private func effectiveMethodEvaluationInput(
+        for run: EffectiveMethodCandidateRun,
+        dataMode: HealthDataMode
+    ) -> EffectiveMethodRunEvaluationInput {
+        let baseline: MicroPlanBaselineSnapshot?
+        let baselineReadFailed: Bool
+        do {
+            baseline = try baselineStore.baseline(for: run.plan.draft.id)
+            baselineReadFailed = false
+        } catch {
+            baseline = nil
+            baselineReadFailed = true
+        }
+        let context = loadEvaluationContext(
+            for: run.plan,
+            baseline: baseline,
+            dataMode: dataMode
+        )
+        let subjectiveChange = loadEffectiveMethodSubjectiveChange(
+            for: run.plan,
+            baseline: baseline,
+            dataMode: dataMode
+        )
+        return EffectiveMethodRunEvaluationInput(
+            run: run,
+            baseline: baseline,
+            baselineReadFailed: baselineReadFailed,
+            context: context,
+            subjectiveChange: subjectiveChange
+        )
+    }
+
+    private func loadEffectiveMethodSubjectiveChange(
+        for plan: MicroPlan,
+        baseline: MicroPlanBaselineSnapshot?,
+        dataMode: HealthDataMode,
+        calendar sourceCalendar: Calendar = .current
+    ) -> EffectiveMethodSubjectiveRunChange {
+        let planDataMode = baseline?.dataMode ?? dataMode
+        guard dataMode == .live, planDataMode == .live,
+              let subjectiveRecordStore else { return .unavailable }
+
+        let calendar = sourceCalendar
+        let timeZone = calendar.timeZone
+        let planStart = calendar.startOfDay(for: plan.draft.startDate)
+        let planEnd = calendar.startOfDay(for: plan.draft.endDateExclusive)
+        guard planEnd > planStart,
+              let beforeStart = calendar.date(
+                byAdding: .day,
+                value: -5,
+                to: planStart
+              ) else { return .unavailable }
+
+        do {
+            let before = try checkIns(
+                from: beforeStart,
+                until: planStart,
+                timeZone: timeZone,
+                calendar: calendar,
+                store: subjectiveRecordStore
+            )
+            let duringPlan = try checkIns(
+                from: planStart,
+                until: planEnd,
+                timeZone: timeZone,
+                calendar: calendar,
+                store: subjectiveRecordStore
+            )
+            return EffectiveMethodSubjectiveRunChange.make(
+                before: before,
+                duringPlan: duringPlan
+            )
+        } catch {
+            return .unavailable
+        }
+    }
+
+    private func checkIns(
+        from start: Date,
+        until end: Date,
+        timeZone: TimeZone,
+        calendar: Calendar,
+        store: any SubjectiveRecordStore
+    ) throws -> [DailyCheckIn] {
+        guard let dayCount = calendar.dateComponents(
+            [.day],
+            from: start,
+            to: end
+        ).day, dayCount >= 0 else { throw SubjectiveRecordStoreError.corruptData }
+
+        return try (0..<dayCount).compactMap { offset in
+            guard let date = calendar.date(byAdding: .day, value: offset, to: start) else {
+                throw SubjectiveRecordStoreError.corruptData
+            }
+            let day = SubjectiveLocalDay(date: date, timeZone: timeZone)
+            guard let record = try store.checkIn(on: day) else { return nil }
+            guard record.localDay.storageKey == day.storageKey else {
+                throw SubjectiveRecordStoreError.corruptData
+            }
+            return record
+        }
+    }
+
+    private func loadEvaluationContext(
+        for plan: MicroPlan,
+        baseline: MicroPlanBaselineSnapshot?,
+        dataMode: HealthDataMode
+    ) -> MicroPlanEvaluationContext {
+        let planDataMode = baseline?.dataMode ?? dataMode
+        guard dataMode == .live, planDataMode == .live else {
+            return .demoMode
+        }
+        guard let subjectiveRecordStore else { return .unavailable }
+        let interval = DateInterval(
+            start: plan.draft.startDate,
+            end: plan.draft.endDateExclusive
+        )
+        do {
+            return .recorded(
+                try subjectiveRecordStore.contextEvents(overlapping: interval)
+            )
+        } catch {
+            return .unavailable
+        }
     }
 
     private func present(_ error: Error) {
@@ -314,26 +817,41 @@ final class MicroPlanSession: ObservableObject {
 
 }
 
+private struct MicroPlanTrendRequest: Hashable, Sendable {
+    let planID: String
+    let planStatus: String
+    let snapshotIntervalEnd: Date?
+    let baselineCapturedAt: Date?
+    let dataMode: String
+}
+
 struct MicroPlanView: View {
     @ObservedObject var session: MicroPlanSession
     @ObservedObject var healthSession: HealthDataSession
     let onOpenAssistant: () -> Void
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var confirmsEarlyEnd = false
     @State private var debugScrollTarget: String?
     @State private var dailyFeedbackDraft = ""
     @State private var confirmsAIEvaluation = false
+    @State private var trendPresentations = [MicroPlanTrendPresentation]()
+    @State private var displayedTrendRequest: MicroPlanTrendRequest?
 
-    private var trendCards: [MicroPlanTrendPresentation] {
-        guard let plan = session.displayedPlan else { return [] }
-        return MicroPlanTrendPresentationFactory.make(
-            plan: plan,
-            snapshot: healthSession.snapshot,
-            baseline: session.baselineSnapshot,
-            dataMode: healthSession.dataMode
+    private var trendRequest: MicroPlanTrendRequest? {
+        guard let plan = session.displayedPlan else { return nil }
+        return MicroPlanTrendRequest(
+            planID: plan.draft.id.rawValue,
+            planStatus: plan.status.rawValue,
+            snapshotIntervalEnd: healthSession.snapshotInterval?.end,
+            baselineCapturedAt: session.baselineSnapshot?.capturedAt,
+            dataMode: healthSession.dataMode.rawValue
         )
     }
 
     var body: some View {
+        let request = trendRequest
+        let trendsAreReady = request == displayedTrendRequest
+        let trendCards = trendsAreReady ? trendPresentations : []
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
@@ -346,7 +864,23 @@ struct MicroPlanView: View {
                     if let plan = session.displayedPlan {
                         progressHero(plan)
                         planCard(plan)
-                        trendSection(plan)
+                        if plan.status == .completed || plan.status == .endedEarly,
+                           let progress = session.progress,
+                           trendsAreReady {
+                            planEvaluationSection(
+                                plan,
+                                evaluation: MicroPlanEvaluationFactory.make(
+                                    plan: plan,
+                                    progress: progress,
+                                    outcomes: session.outcomeRecords,
+                                    trends: trendCards,
+                                    context: session.evaluationContext
+                                )
+                            )
+                        } else if plan.status == .completed || plan.status == .endedEarly {
+                            planAnalysisLoadingCard
+                        }
+                        trendSection(plan, trends: trendCards, isLoading: !trendsAreReady)
                     } else if session.isBusy {
                         loadingCard
                     } else {
@@ -364,10 +898,10 @@ struct MicroPlanView: View {
             .toolbar(.hidden, for: .navigationBar)
             .refreshable {
                 await healthSession.refresh()
-                await session.refresh()
+                await session.refresh(dataMode: healthSession.dataMode)
             }
-            .task {
-                await session.refresh()
+            .task(id: healthSession.dataMode) {
+                await session.refreshIfNeeded(dataMode: healthSession.dataMode)
 #if DEBUG
                 if ProcessInfo.processInfo.arguments.contains("--plans-trends-preview") {
                     try? await Task.sleep(for: .milliseconds(350))
@@ -380,6 +914,7 @@ struct MicroPlanView: View {
                 }
 #endif
             }
+            .task(id: request) { await prepareTrends(for: request) }
             .confirmationDialog(
                 "提前结束这个微计划？",
                 isPresented: $confirmsEarlyEnd,
@@ -395,13 +930,41 @@ struct MicroPlanView: View {
         }
     }
 
+    @MainActor
+    private func prepareTrends(for request: MicroPlanTrendRequest?) async {
+        guard displayedTrendRequest != request else { return }
+        trendPresentations = []
+        displayedTrendRequest = nil
+        guard let request,
+              let plan = session.displayedPlan else {
+            displayedTrendRequest = request
+            return
+        }
+
+        let snapshot = healthSession.snapshot
+        let baseline = session.baselineSnapshot
+        let dataMode = healthSession.dataMode
+        let presentations = await Task.detached(priority: .userInitiated) {
+            MicroPlanTrendPresentationFactory.make(
+                plan: plan,
+                snapshot: snapshot,
+                baseline: baseline,
+                dataMode: dataMode
+            )
+        }.value
+
+        guard !Task.isCancelled, request == trendRequest else { return }
+        trendPresentations = presentations
+        displayedTrendRequest = request
+    }
+
     private var pageHeader: some View {
         HStack(alignment: .center, spacing: 14) {
             Text("微计划")
                 .font(.system(.largeTitle, design: .rounded, weight: .bold))
             Spacer(minLength: 0)
             NavigationLink {
-                MicroPlanHistoryView(entries: session.history)
+                MicroPlanHistoryView(session: session)
             } label: {
                 Image(systemName: "clock.arrow.circlepath")
                     .font(.headline.weight(.semibold))
@@ -509,19 +1072,6 @@ struct MicroPlanView: View {
                 .disabled(session.isBusy)
             }
 
-            if plan.status == .completed || plan.status == .endedEarly,
-               let progress = session.progress {
-                Divider()
-                planEvaluationSection(
-                    plan,
-                    evaluation: MicroPlanEvaluationFactory.make(
-                        plan: plan,
-                        progress: progress,
-                        outcomes: session.outcomeRecords,
-                        trends: trendCards
-                    )
-                )
-            }
         }
         .padding(18)
         .background(
@@ -531,7 +1081,11 @@ struct MicroPlanView: View {
         .shadow(color: .black.opacity(0.04), radius: 14, y: 7)
     }
 
-    private func trendSection(_ plan: MicroPlan) -> some View {
+    private func trendSection(
+        _ plan: MicroPlan,
+        trends: [MicroPlanTrendPresentation],
+        isLoading: Bool
+    ) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 5) {
                 Text("计划期间的变化")
@@ -544,11 +1098,29 @@ struct MicroPlanView: View {
                     .foregroundStyle(.orange)
             }
 
-            ForEach(trendCards) { trend in
-                MicroPlanTrendCard(trend: trend)
+            if isLoading {
+                ProgressView("正在整理计划趋势…")
+                    .frame(maxWidth: .infinity, minHeight: 90)
+            } else {
+                ForEach(trends) { trend in
+                    MicroPlanTrendCard(trend: trend)
+                }
             }
         }
         .id("planTrends")
+    }
+
+    private var planAnalysisLoadingCard: some View {
+        HStack(spacing: 10) {
+            ProgressView()
+            Text("正在整理计划评估…")
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, minHeight: 72)
+        .background(
+            Color(uiColor: .secondarySystemGroupedBackground),
+            in: RoundedRectangle(cornerRadius: 20)
+        )
     }
 
     private func planFacts(_ plan: MicroPlan) -> some View {
@@ -556,7 +1128,6 @@ struct MicroPlanView: View {
             factPill("\(durationDays(for: plan)) 天", systemImage: "calendar")
             factPill(formattedTime(plan.draft.scheduledTime), systemImage: "clock")
         }
-        .id("planEvaluation")
     }
 
     @ViewBuilder
@@ -672,38 +1243,14 @@ struct MicroPlanView: View {
         _ plan: MicroPlan,
         evaluation: MicroPlanEvaluationPresentation
     ) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Label("计划评估", systemImage: "chart.line.text.clipboard")
-                .font(.headline)
-                .foregroundStyle(.teal)
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text(evaluation.verdict.title)
-                    .font(.title3.bold())
-            }
+        VStack(alignment: .leading, spacing: 18) {
+            evaluationSummaryCard(evaluation)
 
             evaluationEvidence(evaluation.factPack)
 
-            if !evaluation.factPack.userFeedback.isEmpty {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("你的反馈")
-                        .font(.subheadline.weight(.semibold))
-                    ForEach(
-                        Array(evaluation.factPack.userFeedback.suffix(2).enumerated()),
-                        id: \.offset
-                    ) { _, feedback in
-                        Text("“\(feedback)”")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .privacySensitive()
-                    }
-                }
-            }
-
             if let response = session.aiEvaluation {
                 VStack(alignment: .leading, spacing: 7) {
-                    Label("AI 解读", systemImage: "sparkles")
+                    Label("AI 深度解读与调整建议", systemImage: "sparkles")
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.teal)
                     Text(LocalizedStringKey(response.summary))
@@ -731,20 +1278,38 @@ struct MicroPlanView: View {
                         } else {
                             Image(systemName: "sparkles")
                         }
-                        Text(session.isEvaluating ? "正在生成评估…" : "AI 解读")
+                        Text(
+                            session.isEvaluating
+                                ? "正在生成评估…"
+                                : "AI 深度解读与调整建议"
+                        )
                     }
-                    .font(.subheadline.weight(.semibold))
+                    .font(.headline.weight(.semibold))
                     .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity, minHeight: 46)
-                    .background(
-                        Color.teal,
-                        in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .frame(maxWidth: .infinity, minHeight: 56)
+                    .background {
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .fill(
+                                LinearGradient(
+                                    colors: [Color.cyan, Color.teal],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                            .shadow(
+                                color: Color.teal.opacity(0.18),
+                                radius: 12,
+                                y: 7
+                            )
+                    }
+                    .contentShape(
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
                     )
                 }
                 .buttonStyle(.plain)
                 .disabled(session.isEvaluating)
                 .confirmationDialog(
-                    "AI 解读？",
+                    "AI 深度解读与调整建议？",
                     isPresented: $confirmsAIEvaluation,
                     titleVisibility: .visible
                 ) {
@@ -760,57 +1325,271 @@ struct MicroPlanView: View {
                     }
                     Button("取消", role: .cancel) {}
                 } message: {
-                    Text("将发送完成率、反馈文字、相关指标聚合和数据质量，不会发送原始 HealthKit 样本。")
+                    Text("将发送完成率、反馈文字、相关指标聚合、数据质量和结构化同期生活背景，不会发送生活事件备注、自定义名称、记录 ID 或原始 HealthKit 样本。")
                 }
 
             }
         }
+        .id("planEvaluation")
+    }
+
+    private func evaluationSummaryCard(
+        _ evaluation: MicroPlanEvaluationPresentation
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 10) {
+                    evaluationTitle(evaluation.verdict.title)
+                    evaluationStatusBadge(evaluation.verdict)
+                }
+            } else {
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    evaluationTitle(evaluation.verdict.title)
+                    Spacer(minLength: 0)
+                    evaluationStatusBadge(evaluation.verdict)
+                }
+            }
+
+            Text(evaluation.summary)
+                .font(.body)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            Color.yellow.opacity(0.08),
+            in: RoundedRectangle(cornerRadius: 24, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(Color.orange.opacity(0.22), lineWidth: 1)
+        }
+    }
+
+    private func evaluationTitle(_ title: String) -> some View {
+        Text(title)
+            .font(.title3.bold())
+            .fixedSize(horizontal: false, vertical: true)
+            .layoutPriority(1)
+    }
+
+    private func evaluationStatusBadge(
+        _ verdict: MicroPlanEvaluationVerdict
+    ) -> some View {
+        Text(evaluationStatusTitle(verdict))
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.orange)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .background(
+                Color.orange.opacity(0.11),
+                in: RoundedRectangle(cornerRadius: 11, style: .continuous)
+            )
+            .fixedSize()
     }
 
     private func evaluationEvidence(
         _ factPack: MicroPlanEvaluationFactPack
     ) -> some View {
-        let rate = factPack.completionRate.map {
-            "\(Int(($0 * 100).rounded()))%"
-        } ?? "无法计算"
         return VStack(spacing: 0) {
-            evaluationEvidenceRow("完成率", value: rate)
+            evaluationCompletionRow(factPack.completionRate)
             Divider()
             evaluationEvidenceRow(
-                "主观反馈",
+                "主观感受",
                 value: factPack.userFeedback.isEmpty
-                    ? "未填写"
+                    ? "未记录"
                     : "已记录 \(factPack.userFeedback.count) 天"
             )
             Divider()
             evaluationEvidenceRow(
-                "客观趋势",
+                "客观生理趋势",
                 value: factPack.metrics.isEmpty
-                    ? "暂无可靠对照"
+                    ? "暂无可比对照"
                     : "已对照 \(factPack.metrics.count) 项指标"
             )
             Divider()
-            evaluationEvidenceRow("数据质量", value: factPack.dataQualitySummary)
+            evaluationContextRow(factPack)
+            Divider()
+            evaluationEvidenceRow("数据基线", value: factPack.dataQualitySummary)
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, 18)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity)
         .background(
-            Color(uiColor: .tertiarySystemGroupedBackground),
-            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+            Color(uiColor: .secondarySystemGroupedBackground),
+            in: RoundedRectangle(cornerRadius: 24, style: .continuous)
         )
+        .overlay {
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(Color.secondary.opacity(0.10), lineWidth: 1)
+        }
     }
 
     private func evaluationEvidenceRow(_ title: String, value: String) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            Text(title)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .frame(width: 62, alignment: .leading)
-            Text(value)
-                .font(.caption)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .fixedSize(horizontal: false, vertical: true)
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 8) {
+                    evaluationEvidenceLabel(title)
+                    evaluationEvidenceValue(value, alignment: .leading)
+                }
+            } else {
+                HStack(alignment: .firstTextBaseline, spacing: 16) {
+                    evaluationEvidenceLabel(title)
+                    Spacer(minLength: 8)
+                    evaluationEvidenceValue(value, alignment: .trailing)
+                }
+            }
         }
-        .padding(.vertical, 10)
+        .padding(.vertical, 16)
+    }
+
+    private func evaluationEvidenceLabel(_ title: String) -> some View {
+        Text(title)
+            .font(.body.weight(.semibold))
+            .foregroundStyle(Color.secondary.opacity(0.72))
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func evaluationEvidenceValue(
+        _ value: String,
+        alignment: TextAlignment
+    ) -> some View {
+        Text(value)
+            .font(.body)
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(alignment)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func evaluationCompletionRow(_ completionRate: Double?) -> some View {
+        let boundedRate = min(max(completionRate ?? 0, 0), 1)
+        let rateText = completionRate.map {
+            "\(Int(($0 * 100).rounded()))%"
+        } ?? "无法计算"
+        return Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 10) {
+                    evaluationEvidenceLabel("完成率")
+                    evaluationCompletionValue(boundedRate, rateText: rateText)
+                }
+            } else {
+                HStack(alignment: .center, spacing: 16) {
+                    evaluationEvidenceLabel("完成率")
+                    Spacer(minLength: 8)
+                    evaluationCompletionValue(boundedRate, rateText: rateText)
+                }
+            }
+        }
+        .padding(.vertical, 16)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("完成率")
+        .accessibilityValue(rateText)
+    }
+
+    private func evaluationCompletionValue(
+        _ boundedRate: Double,
+        rateText: String
+    ) -> some View {
+        HStack(spacing: 12) {
+            GeometryReader { proxy in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(Color.secondary.opacity(0.16))
+                    Capsule()
+                        .fill(
+                            LinearGradient(
+                                colors: [Color.cyan, Color.teal],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .frame(width: proxy.size.width * boundedRate)
+                }
+            }
+            .frame(width: 92, height: 7)
+
+            Text(rateText)
+                .font(.body.weight(.semibold).monospacedDigit())
+                .foregroundStyle(.primary)
+                .fixedSize()
+        }
+    }
+
+    private func evaluationContextRow(
+        _ factPack: MicroPlanEvaluationFactPack
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 8) {
+                    evaluationEvidenceLabel("同期生活背景")
+                    evaluationContextBadge(factPack)
+                }
+            } else {
+                HStack(alignment: .firstTextBaseline, spacing: 16) {
+                    evaluationEvidenceLabel("同期生活背景")
+                    Spacer(minLength: 8)
+                    evaluationContextBadge(factPack)
+                }
+            }
+
+            Text(factPack.contextSummary)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    Color(uiColor: .systemBackground),
+                    in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                )
+                .overlay {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(Color.secondary.opacity(0.08), lineWidth: 1)
+                }
+        }
+        .padding(.vertical, 16)
+    }
+
+    private func evaluationContextBadge(
+        _ factPack: MicroPlanEvaluationFactPack
+    ) -> some View {
+        Text(evaluationContextValue(factPack))
+            .font(.body)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 5)
+            .background(
+                Color.secondary.opacity(0.06),
+                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+            )
+    }
+
+    private func evaluationStatusTitle(
+        _ verdict: MicroPlanEvaluationVerdict
+    ) -> String {
+        switch verdict {
+        case .mayHaveHelped: "初步观察"
+        case .noClearChange: "继续观察"
+        case .insufficientExecution: "待补足样本"
+        case .insufficientData: "待补足数据"
+        case .subjectiveObjectiveMismatch: "分开观察"
+        }
+    }
+
+    private func evaluationContextValue(
+        _ factPack: MicroPlanEvaluationFactPack
+    ) -> String {
+        switch factPack.contextStatus {
+        case .recorded:
+            let count = factPack.contextEvents.reduce(0) {
+                $0 + $1.occurrenceCount
+            }
+            return "\(count) 条记录"
+        case .notRecorded: return "未记录"
+        case .unavailable: return "暂时无法读取"
+        case .demoMode: return "演示模式"
+        }
     }
 
     private var emptyState: some View {
@@ -1268,15 +2047,29 @@ private struct MicroPlanTrendCard: View {
 }
 
 private struct MicroPlanHistoryView: View {
-    let entries: [MicroPlanHistoryEntry]
+    @ObservedObject var session: MicroPlanSession
+    @State private var confirmsDeletion = false
+    @State private var planPendingDeletion: MicroPlan?
 
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 14) {
-                if entries.isEmpty {
+                if let message = session.message, session.showsError {
+                    Label(message, systemImage: "exclamationmark.triangle.fill")
+                        .font(.footnote)
+                        .foregroundStyle(.orange)
+                        .padding(14)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(
+                            Color.orange.opacity(0.08),
+                            in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        )
+                }
+
+                if session.history.isEmpty {
                     emptyState
                 } else {
-                    ForEach(entries) { entry in
+                    ForEach(session.history) { entry in
                         historyCard(entry)
                     }
                 }
@@ -1288,6 +2081,24 @@ private struct MicroPlanHistoryView: View {
         .navigationTitle("历史微计划")
         .navigationBarTitleDisplayMode(.large)
         .toolbar(.visible, for: .navigationBar)
+        .confirmationDialog(
+            "删除这条微计划记录？",
+            isPresented: $confirmsDeletion,
+            titleVisibility: .visible
+        ) {
+            if let planPendingDeletion {
+                Button("删除计划数据", role: .destructive) {
+                    let plan = planPendingDeletion
+                    self.planPendingDeletion = nil
+                    Task { await session.delete(plan) }
+                }
+            }
+            Button("取消", role: .cancel) {
+                planPendingDeletion = nil
+            }
+        } message: {
+            Text("这会删除该计划、每日打卡、反馈和关联评估基线，且无法恢复。")
+        }
     }
 
     private var emptyState: some View {
@@ -1348,6 +2159,20 @@ private struct MicroPlanHistoryView: View {
             Text("完成 \(entry.progress.completedCount) / \(entry.progress.scheduledCount) 次")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+
+            Divider()
+
+            Button(role: .destructive) {
+                planPendingDeletion = entry.plan
+                confirmsDeletion = true
+            } label: {
+                Label("删除计划记录", systemImage: "trash")
+                    .font(.subheadline.weight(.semibold))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(.plain)
+            .disabled(session.isBusy)
+            .accessibilityHint("删除计划、打卡、反馈和关联评估基线")
         }
         .padding(16)
         .background(

@@ -95,9 +95,22 @@ struct TodayNightSummary: Equatable, Sendable {
 
 struct TodayImportantChange: Equatable, Sendable {
     let metric: HealthMetricType
+    let currentMedian: Double
     let whatChanged: String
     let actionText: String
     let relativeDifference: Double
+
+    var metricTitle: String {
+        switch metric {
+        case .sleepDuration: "睡眠时长"
+        case .heartRateVariability: "HRV"
+        case .restingHeartRate: "静息心率"
+        case .stepCount: "步数"
+        case .activeEnergy: "活动能量"
+        case .exerciseDuration: "锻炼时长"
+        default: metric.rawValue
+        }
+    }
 }
 
 struct TodayDashboardPresentation: Equatable, Sendable {
@@ -623,7 +636,6 @@ enum TodayDashboardPresentationFactory {
 enum TodayImportantChangeSelector {
     private struct Configuration {
         let metric: HealthMetricType
-        let relativeThreshold: Double
         let priority: Int
     }
 
@@ -634,12 +646,12 @@ enum TodayImportantChangeSelector {
     }
 
     private static let configurations = [
-        Configuration(metric: .sleepDuration, relativeThreshold: 0.08, priority: 0),
-        Configuration(metric: .heartRateVariability, relativeThreshold: 0.15, priority: 1),
-        Configuration(metric: .restingHeartRate, relativeThreshold: 0.08, priority: 2),
-        Configuration(metric: .stepCount, relativeThreshold: 0.15, priority: 3),
-        Configuration(metric: .activeEnergy, relativeThreshold: 0.18, priority: 4),
-        Configuration(metric: .exerciseDuration, relativeThreshold: 0.25, priority: 5)
+        Configuration(metric: .sleepDuration, priority: 0),
+        Configuration(metric: .heartRateVariability, priority: 1),
+        Configuration(metric: .restingHeartRate, priority: 2),
+        Configuration(metric: .stepCount, priority: 3),
+        Configuration(metric: .activeEnergy, priority: 4),
+        Configuration(metric: .exerciseDuration, priority: 5)
     ]
 
     static func select(
@@ -673,49 +685,50 @@ enum TodayImportantChangeSelector {
         guard case let .available(samples) = snapshot[configuration.metric] else {
             return nil
         }
-        let currentPoints = HealthMetricDailySeriesCalculator.points(
+        guard let threshold = HealthMetricTrendThresholdCatalog.threshold(
+            for: configuration.metric
+        ),
+              case let .available(currentWindow) = HealthMetricRecentWindowEngine.calculate(
             metric: configuration.metric,
             samples: samples,
             endingAt: selectedDate,
-            window: .sevenDays,
             calendar: calendar
-        )
-        guard currentPoints.count >= HealthDataQualityThresholds.shortTermMinimumValidDays,
-              let currentStart = calendar.date(byAdding: .day, value: -6, to: selectedDate),
-              let baselineEnd = calendar.date(byAdding: .second, value: -1, to: currentStart),
+        ),
+              let baselineEnd = calendar.date(
+                  byAdding: .second,
+                  value: -1,
+                  to: currentWindow.interval.start
+              ),
               case let .available(baseline) = HealthMetricBaselineEngine.calculate(
                   metric: configuration.metric,
                   samples: samples,
                   endingAt: baselineEnd,
                   calendar: calendar
               ),
-              baseline.medianValue > 0,
-              hasStableSource(
-                  metric: configuration.metric,
-                  samples: samples,
-                  endingAt: selectedDate,
-                  calendar: calendar
-              )
+              let trend = try? HealthMetricTrendDetector.detect(
+                  baseline: baseline,
+                  current: currentWindow,
+                  sourceIsStable: HealthMetricTrendSourceStabilityEvaluator.isStable(
+                      metric: configuration.metric,
+                      samples: samples,
+                      endingAt: selectedDate,
+                      calendar: calendar
+                  ),
+                  configuration: threshold.detectorConfiguration
+              ),
+              trend.level == .sustainedChange,
+              case let .available(relativeDifference) =
+                  trend.magnitude.relativeChange,
+              let effectiveThreshold = trend.effectiveRelativeThreshold
         else {
             return nil
         }
 
-        let currentMedian = median(currentPoints.map(\.value).sorted())
-        let relativeDifference = (currentMedian - baseline.medianValue) / baseline.medianValue
-        let robustThreshold = baseline.medianAbsoluteDeviation * 2.5 / baseline.medianValue
-        let effectiveThreshold = max(configuration.relativeThreshold, robustThreshold)
-        guard abs(relativeDifference) >= effectiveThreshold else { return nil }
-
-        let direction = relativeDifference > 0 ? 1.0 : -1.0
-        let alignedDayCount = currentPoints.filter {
-            (($0.value - baseline.medianValue) * direction)
-                >= baseline.medianValue * configuration.relativeThreshold * 0.5
-        }.count
-        let requiredAlignedDays = max(3, Int(ceil(Double(currentPoints.count) / 2)))
-        guard alignedDayCount >= requiredAlignedDays else { return nil }
+        let currentMedian = trend.magnitude.currentValue
 
         let change = TodayImportantChange(
             metric: configuration.metric,
+            currentMedian: currentMedian,
             whatChanged: whatChangedText(
                 metric: configuration.metric,
                 currentMedian: currentMedian,
@@ -733,49 +746,6 @@ enum TodayImportantChangeSelector {
             score: abs(relativeDifference) / effectiveThreshold,
             priority: configuration.priority
         )
-    }
-
-    private static func hasStableSource(
-        metric: HealthMetricType,
-        samples: [HealthMetricSample],
-        endingAt selectedDate: Date,
-        calendar: Calendar
-    ) -> Bool {
-        let endDay = calendar.startOfDay(for: selectedDate)
-        guard let firstDay = calendar.date(byAdding: .day, value: -34, to: endDay) else {
-            return false
-        }
-        let grouped = Dictionary(grouping: samples.filter {
-            let day = calendar.startOfDay(for: $0.endDate)
-            return day >= firstDay && day <= endDay
-        }) { calendar.startOfDay(for: $0.endDate) }
-
-        let sourceSignatures = grouped.values.compactMap { daySamples -> String? in
-            let selected: [HealthMetricSample]
-            switch metric {
-            case .stepCount, .sleepDuration, .activeEnergy, .exerciseDuration:
-                guard let preferred = PreferredHealthMetricSourceSelector.samples(
-                    from: daySamples
-                ) else { return nil }
-                selected = preferred
-            default:
-                selected = daySamples
-            }
-            let identifiers = Set(selected.map {
-                $0.source.bundleIdentifier ?? $0.source.displayName
-            })
-            guard identifiers.count == 1 else { return nil }
-            return identifiers.first
-        }
-        return !sourceSignatures.isEmpty && Set(sourceSignatures).count == 1
-    }
-
-    private static func median(_ sortedValues: [Double]) -> Double {
-        let middle = sortedValues.count / 2
-        if sortedValues.count.isMultiple(of: 2) {
-            return (sortedValues[middle - 1] + sortedValues[middle]) / 2
-        }
-        return sortedValues[middle]
     }
 
     private static func whatChangedText(

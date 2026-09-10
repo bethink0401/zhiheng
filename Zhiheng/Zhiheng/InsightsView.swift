@@ -1,6 +1,12 @@
 import Charts
 import SwiftUI
 
+private struct InsightsDashboardRequest: Hashable, Sendable {
+    let snapshotIntervalEnd: Date?
+    let dataMode: String
+    let referenceDay: Date
+}
+
 struct InsightsView: View {
     @ObservedObject private var healthSession: HealthDataSession
     private let debugSectionFromArguments: String?
@@ -11,6 +17,9 @@ struct InsightsView: View {
     @State private var showsTrendDetails = false
     @State private var showsMetricEditor = false
     @State private var debugScrollTarget: String?
+    @State private var dashboardPresentation: InsightsDashboardPresentation?
+    @State private var displayedDashboardRequest: InsightsDashboardRequest?
+    @State private var didPrepareView = false
 
     init(healthSession: HealthDataSession) {
         self.healthSession = healthSession
@@ -37,16 +46,19 @@ struct InsightsView: View {
     private var isLoading: Bool { healthSession.isLoading }
     private var dataMode: HealthDataMode { healthSession.dataMode }
 
-    private var dashboard: InsightsDashboardPresentation? {
-        healthSnapshot.map {
-            InsightsDashboardPresentationFactory.make(
-                snapshot: $0,
-                referenceDate: Date()
-            )
-        }
+    private var dashboardRequest: InsightsDashboardRequest {
+        InsightsDashboardRequest(
+            snapshotIntervalEnd: healthSession.snapshotInterval?.end,
+            dataMode: dataMode.rawValue,
+            referenceDay: Calendar.current.startOfDay(for: Date())
+        )
     }
 
     var body: some View {
+        let request = dashboardRequest
+        let dashboard = displayedDashboardRequest == request
+            ? dashboardPresentation
+            : nil
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
@@ -58,14 +70,14 @@ struct InsightsView: View {
                             .id("insightsBody")
                         referenceNote
                         wearableReminder
-                    } else if isLoading {
+                    } else if isLoading || healthSnapshot != nil {
                         ProgressView("正在整理健康数据…")
                             .frame(maxWidth: .infinity, minHeight: 360)
                     } else if !readiness.canQueryHealthData {
                         ContentUnavailableView(
                             "还没有可分析的数据",
                             systemImage: "chart.xyaxis.line",
-                            description: Text("请先到“我的”页面查看健康数据状态并连接 Apple Health。")
+                            description: Text("请从“今日”右上角的设置查看健康数据状态并连接 Apple Health。")
                         )
                         .frame(minHeight: 360)
                     }
@@ -78,23 +90,19 @@ struct InsightsView: View {
             .scrollPosition(id: $debugScrollTarget, anchor: .top)
             .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
             .toolbar(.hidden, for: .navigationBar)
-            .refreshable { await loadHealthData() }
+            .refreshable {
+                await loadHealthData()
+            }
             .task {
+                guard !didPrepareView else { return }
+                didPrepareView = true
                 restoreLayout()
                 if let debugSectionFromArguments {
                     try? await Task.sleep(for: .milliseconds(250))
                     debugScrollTarget = debugSectionFromArguments
                 }
             }
-            .onChange(of: dashboard != nil) { _, isAvailable in
-#if DEBUG
-                guard isAvailable, let debugSectionFromArguments else { return }
-                Task { @MainActor in
-                    try? await Task.sleep(for: .milliseconds(250))
-                    debugScrollTarget = debugSectionFromArguments
-                }
-#endif
-            }
+            .task(id: request) { await prepareDashboard(for: request) }
             .onChange(of: layout) { _, newValue in
                 storedLayout = (try? JSONEncoder().encode(newValue)) ?? Data()
             }
@@ -110,6 +118,39 @@ struct InsightsView: View {
         .sheet(isPresented: $showsMetricEditor) {
             InsightsMetricEditorView(layout: $layout)
         }
+    }
+
+    @MainActor
+    private func prepareDashboard(for request: InsightsDashboardRequest) async {
+        guard displayedDashboardRequest != request else { return }
+        dashboardPresentation = nil
+        displayedDashboardRequest = nil
+        guard let snapshot = healthSnapshot else {
+            guard request == dashboardRequest else { return }
+            displayedDashboardRequest = request
+            return
+        }
+
+        let referenceDate = Date()
+        let calendar = Calendar.current
+        let presentation = await Task.detached(priority: .userInitiated) {
+            InsightsDashboardPresentationFactory.make(
+                snapshot: snapshot,
+                referenceDate: referenceDate,
+                calendar: calendar
+            )
+        }.value
+
+        guard !Task.isCancelled, request == dashboardRequest else { return }
+        dashboardPresentation = presentation
+        displayedDashboardRequest = request
+#if DEBUG
+        if let debugSectionFromArguments {
+            try? await Task.sleep(for: .milliseconds(250))
+            guard request == dashboardRequest else { return }
+            debugScrollTarget = debugSectionFromArguments
+        }
+#endif
     }
 
     private var insightsHeader: some View {
@@ -332,6 +373,7 @@ struct InsightsView: View {
     private func loadHealthData() async {
         await healthSession.refresh()
     }
+
 }
 
 private enum InsightsPalette {
@@ -340,6 +382,439 @@ private enum InsightsPalette {
     static let green = Color(red: 0.05, green: 0.74, blue: 0.35)
     static let chartBackground = Color(red: 0.94, green: 0.94, blue: 0.97)
     static let referenceBand = Color(red: 0.93, green: 0.58, blue: 0.58).opacity(0.12)
+}
+
+private struct InsightFourLayerCard: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    let presentation: InsightFourLayerCardPresentation
+    let interactionState: InsightInteractionState?
+    let interactionIsAvailable: Bool
+    let errorMessage: String?
+    let onToggleRead: () -> Void
+    let onIgnore: () -> Void
+    let onToggleReminders: () -> Void
+    let onRetry: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        headerIcon
+                        Spacer()
+                        demoBadge
+                    }
+                    headerText
+                }
+            } else {
+                HStack(alignment: .top, spacing: 12) {
+                    headerIcon
+                    headerText
+                    Spacer(minLength: 0)
+                    demoBadge
+                }
+            }
+
+            VStack(spacing: 0) {
+                ForEach(Array(presentation.layers.enumerated()), id: \.element.id) { index, layer in
+                    InsightLayerRow(layer: layer)
+                    if index < presentation.layers.count - 1 {
+                        Divider().padding(.leading, dynamicTypeSize.isAccessibilitySize ? 13 : 38)
+                    }
+                }
+            }
+            .background(
+                Color(uiColor: .tertiarySystemGroupedBackground),
+                in: RoundedRectangle(cornerRadius: 18)
+            )
+
+            InsightEvidenceSection(presentation: presentation.evidence)
+
+            if let question = presentation.followUpQuestion {
+                VStack(alignment: .leading, spacing: 7) {
+                    Label("一个可选问题", systemImage: "questionmark.bubble.fill")
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(.teal)
+                    Text(question)
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(InsightsPalette.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text("可以稍后再回答；未回答的内容不会被当成事实。")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(14)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(.teal.opacity(0.09), in: RoundedRectangle(cornerRadius: 16))
+            }
+
+            Divider()
+
+            InsightInteractionControls(
+                topicTitle: presentation.interactionIdentity.topic.displayTitle,
+                state: interactionState,
+                isAvailable: interactionIsAvailable,
+                errorMessage: errorMessage,
+                onToggleRead: onToggleRead,
+                onIgnore: onIgnore,
+                onToggleReminders: onToggleReminders,
+                onRetry: onRetry
+            )
+        }
+        .padding(16)
+        .background(
+            Color(uiColor: .secondarySystemGroupedBackground),
+            in: RoundedRectangle(cornerRadius: 24)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 24)
+                .stroke(.teal.opacity(0.14), lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(0.035), radius: 14, y: 7)
+        .accessibilityElement(children: .contain)
+    }
+
+    private var headerIcon: some View {
+                Image(systemName: "sparkles")
+                    .font(.title2.weight(.semibold))
+                    .foregroundStyle(.teal)
+                    .frame(width: 38, height: 38)
+                    .background(.teal.opacity(0.12), in: Circle())
+                    .accessibilityHidden(true)
+    }
+
+    private var headerText: some View {
+        VStack(alignment: .leading, spacing: 4) {
+                    Text(presentation.title)
+                        .font(.headline.weight(.bold))
+                        .foregroundStyle(InsightsPalette.ink)
+                    Text(presentation.scopeText)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+    }
+
+    @ViewBuilder
+    private var demoBadge: some View {
+        if presentation.isDemo {
+            Text("演示")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.orange)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(.orange.opacity(0.12), in: Capsule())
+        }
+    }
+}
+
+private struct InsightInteractionControls: View {
+    let topicTitle: String
+    let state: InsightInteractionState?
+    let isAvailable: Bool
+    let errorMessage: String?
+    let onToggleRead: () -> Void
+    let onIgnore: () -> Void
+    let onToggleReminders: () -> Void
+    let onRetry: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Label(
+                    state?.isRead == true ? "已读" : "未读",
+                    systemImage: state?.isRead == true ? "checkmark.circle.fill" : "circle"
+                )
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(state?.isRead == true ? .teal : .secondary)
+
+                if state?.areRemindersDisabled == true {
+                    Label("同类提醒已关闭", systemImage: "bell.slash.fill")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            HStack(spacing: 10) {
+                interactionButton(
+                    state?.isRead == true ? "标为未读" : "标为已读",
+                    systemImage: state?.isRead == true ? "circle" : "checkmark.circle",
+                    action: onToggleRead
+                )
+                interactionButton(
+                    "忽略本期",
+                    systemImage: "eye.slash",
+                    action: onIgnore
+                )
+            }
+
+            Button(action: onToggleReminders) {
+                Label(
+                    state?.areRemindersDisabled == true
+                        ? "恢复“\(topicTitle)”提醒"
+                        : "不再提醒“\(topicTitle)”",
+                    systemImage: state?.areRemindersDisabled == true ? "bell" : "bell.slash"
+                )
+                .font(.subheadline.weight(.semibold))
+                .frame(maxWidth: .infinity, minHeight: 42)
+            }
+            .buttonStyle(.bordered)
+            .tint(.indigo)
+            .disabled(!isAvailable)
+
+            Text("同类提醒设置只控制今后的低频提醒，不会删除健康数据，也不会阻止你在洞悉页查看内容。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if let errorMessage {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(errorMessage)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
+                    Button("重试", action: onRetry)
+                        .font(.caption.weight(.semibold))
+                }
+            }
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    private func interactionButton(
+        _ title: String,
+        systemImage: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: systemImage)
+                .font(.subheadline.weight(.semibold))
+                .frame(maxWidth: .infinity, minHeight: 42)
+        }
+        .buttonStyle(.bordered)
+        .tint(.teal)
+        .disabled(!isAvailable)
+    }
+}
+
+private struct IgnoredInsightCard: View {
+    let presentation: InsightFourLayerCardPresentation
+    let interactionState: InsightInteractionState?
+    let errorMessage: String?
+    let onRestore: () -> Void
+    let onToggleReminders: () -> Void
+    let onRetry: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("本期洞察已忽略", systemImage: "eye.slash.fill")
+                .font(.headline.weight(.bold))
+                .foregroundStyle(InsightsPalette.ink)
+
+            Text("只隐藏了当前分析窗口的这张卡片，没有删除健康数据或主观记录。")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Button(action: onRestore) {
+                Label("恢复本期洞察", systemImage: "arrow.uturn.backward")
+                    .font(.subheadline.weight(.semibold))
+                    .frame(maxWidth: .infinity, minHeight: 44)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.teal)
+
+            Button(action: onToggleReminders) {
+                Label(
+                    interactionState?.areRemindersDisabled == true
+                        ? "恢复“\(presentation.interactionIdentity.topic.displayTitle)”提醒"
+                        : "不再提醒“\(presentation.interactionIdentity.topic.displayTitle)”",
+                    systemImage: interactionState?.areRemindersDisabled == true
+                        ? "bell"
+                        : "bell.slash"
+                )
+                .font(.subheadline.weight(.semibold))
+                .frame(maxWidth: .infinity, minHeight: 42)
+            }
+            .buttonStyle(.bordered)
+            .tint(.indigo)
+
+            if let errorMessage {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(errorMessage)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
+                    Button("重试", action: onRetry)
+                        .font(.caption.weight(.semibold))
+                }
+            }
+        }
+        .padding(16)
+        .background(
+            Color(uiColor: .secondarySystemGroupedBackground),
+            in: RoundedRectangle(cornerRadius: 24)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 24)
+                .stroke(.teal.opacity(0.14), lineWidth: 1)
+        }
+        .accessibilityElement(children: .contain)
+    }
+}
+
+private struct InsightEvidenceSection: View {
+    @State private var isExpanded = false
+    let presentation: InsightEvidencePresentation
+
+    var body: some View {
+        DisclosureGroup(isExpanded: $isExpanded) {
+            VStack(alignment: .leading, spacing: 12) {
+                ForEach(Array(presentation.items.enumerated()), id: \.element.id) { index, item in
+                    InsightEvidenceItemView(item: item)
+                    if index < presentation.items.count - 1 {
+                        Divider()
+                    }
+                }
+
+                Text(presentation.timeZoneText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.top, 12)
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "list.bullet.clipboard.fill")
+                    .foregroundStyle(.indigo)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(presentation.title)
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(InsightsPalette.ink)
+                    Text(presentation.summary)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .tint(.indigo)
+        .padding(14)
+        .background(.indigo.opacity(0.07), in: RoundedRectangle(cornerRadius: 16))
+        .accessibilityHint(isExpanded ? "收起聚合依据" : "展开聚合依据")
+    }
+}
+
+private struct InsightEvidenceItemView: View {
+    let item: InsightEvidencePresentation.Item
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text(item.metricTitle)
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(InsightsPalette.ink)
+
+            evidenceLine("当前", item.currentWindowText)
+            if let baseline = item.baselineWindowText {
+                evidenceLine("基线", baseline)
+            }
+            if let change = item.changeText {
+                evidenceLine("变化", change)
+            }
+            if let alignment = item.alignmentText {
+                evidenceLine("连续性", alignment)
+            }
+            evidenceLine("来源", item.sourceText)
+            evidenceLine("质量", item.qualityText)
+            evidenceLine("版本", item.versionText)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+    }
+
+    private func evidenceLine(_ title: String, _ value: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 42, alignment: .leading)
+            Text(value)
+                .font(.caption)
+                .foregroundStyle(InsightsPalette.ink)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+private struct InsightLayerRow: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    let layer: InsightFourLayerCardPresentation.Layer
+
+    var body: some View {
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 10) {
+                        layerIcon
+                        layerTitle
+                    }
+                    layerText
+                }
+            } else {
+                HStack(alignment: .top, spacing: 12) {
+                    layerIcon
+                    VStack(alignment: .leading, spacing: 4) {
+                        layerTitle
+                        layerText
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        }
+        .padding(.horizontal, 13)
+        .padding(.vertical, 12)
+        .accessibilityElement(children: .combine)
+    }
+
+    private var layerIcon: some View {
+            Image(systemName: icon)
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(color)
+                .frame(width: 26, height: 26)
+                .background(color.opacity(0.11), in: Circle())
+                .accessibilityHidden(true)
+    }
+
+    private var layerTitle: some View {
+                Text(layer.kind.title)
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(color)
+    }
+
+    private var layerText: some View {
+        Text(layer.text)
+                    .font(.subheadline)
+                    .foregroundStyle(InsightsPalette.ink)
+                    .lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var icon: String {
+        switch layer.kind {
+        case .fact: "chart.line.uptrend.xyaxis"
+        case .possibleExplanation: "link"
+        case .uncertainty: "questionmark.circle"
+        case .recommendation: "leaf"
+        }
+    }
+
+    private var color: Color {
+        switch layer.kind {
+        case .fact: .blue
+        case .possibleExplanation: .purple
+        case .uncertainty: .orange
+        case .recommendation: .teal
+        }
+    }
 }
 
 private struct InsightsCloudBackdrop: View {

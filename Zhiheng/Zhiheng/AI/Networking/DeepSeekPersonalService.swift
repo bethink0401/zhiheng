@@ -358,7 +358,7 @@ struct DeepSeekDirectService: AIService, Sendable {
 
     把可追溯事实和可能因素同时保留在各自结构字段中，最多提出一个真正有助于理解问题的追问；追问是让用户回答的问题，不是建议用户再次向 AI 提问。不得诊断疾病、推荐处方药、停药或调整剂量，也不得承诺持续监护。建议行动最多选择一个允许的低风险微计划模板，并说明为什么它适合当前事实；没有充分依据时 suggestedAction 必须为 null。不得自行计算变化幅度或趋势。current.value 是最近一次本地汇总，不是平均值；baseline.medianValue 是基线中位数。possibleFactors 只能表达可能性，不得写成因果。必须输出符合给定 JSON Schema 的自然中文；uncertainty 必须是单个字符串。
 
-    当输入包含 planEvaluation 时，这是一次计划结束评估。只使用 planEvaluation 中已经由本地程序计算的完成率、用户反馈、指标对照和数据质量；用户反馈是主观感受，不能当作客观事实。summary 必须使用“可能有帮助”“暂未观察到明显变化”“执行不足，无法判断”“数据不足，建议继续观察”或“主观和客观结果不同步”之一作为核心判断，并解释是否值得继续。不得把相关变化写成计划造成的结果。此时 suggestedAction 和 followUpQuestion 必须为 null，不得提出新的微计划；supportiveClosing 给出一个继续、调整或停止观察的低风险选择。
+    当输入包含 planEvaluation 时，这是一次计划结束评估。只使用 planEvaluation 中已经由本地程序计算的完成率、用户反馈、指标对照、数据质量和结构化同期生活背景；用户反馈是主观感受，不能当作客观事实。生活背景只包含事件类型、次数和可选强度，只能表述为同期出现，不能写成计划效果或指标变化的原因；contextStatus 为 unavailable 时不得当作没有生活事件。summary 必须使用“可能有帮助”“暂未观察到明显变化”“执行不足，无法判断”“数据不足，建议继续观察”或“主观和客观结果不同步”之一作为核心判断，并解释是否值得继续。不得把相关变化写成计划造成的结果。此时 suggestedAction 和 followUpQuestion 必须为 null，不得提出新的微计划；supportiveClosing 给出一个继续、调整或停止观察的低风险选择。
     """
 
     private static var responseSchema: [String: Any] { [

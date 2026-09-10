@@ -5,6 +5,7 @@ import Foundation
 final class HealthDataSession: ObservableObject {
     @Published private(set) var accessState = HealthAccessState.notRequested
     @Published private(set) var snapshot: HealthDataSnapshot?
+    @Published private(set) var snapshotInterval: DateInterval?
     @Published private(set) var isLoading = false
     @Published private(set) var dataMode = HealthDataMode.live
 
@@ -34,6 +35,7 @@ final class HealthDataSession: ObservableObject {
         accessState = await service.accessState()
         guard AppReadiness(healthAccess: accessState).canQueryHealthData else {
             snapshot = nil
+            snapshotInterval = nil
             return
         }
         guard let interval = HealthHistoryWindow.last90Days(endingAt: Date()) else {
@@ -43,6 +45,7 @@ final class HealthDataSession: ObservableObject {
             for: Set(HealthMetricType.allCases),
             interval: interval
         )
+        snapshotInterval = interval
     }
 
     func requestReadAccess(for metrics: Set<HealthMetricType>) async throws {

@@ -35,6 +35,37 @@
 		A1000000000000000000001A /* DemoHealthDataService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000001F /* DemoHealthDataService.swift */; };
 		A1000000000000000000001B /* DemoHealthDataServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000020 /* DemoHealthDataServiceTests.swift */; };
 		A1000000000000000000001C /* HealthDataQuality.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000021 /* HealthDataQuality.swift */; };
+		A10000000000000000000046 /* HealthContextTimeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000046 /* HealthContextTimeline.swift */; };
+		A10000000000000000000049 /* StateComparison.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000049 /* StateComparison.swift */; };
+		A1000000000000000000004C /* Insight.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000004C /* Insight.swift */; };
+		A1000000000000000000004E /* InsightFactGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000004E /* InsightFactGenerator.swift */; };
+		A10000000000000000000050 /* InsightContextMatching.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000050 /* InsightContextMatching.swift */; };
+		A10000000000000000000051 /* InsightContextLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000051 /* InsightContextLoader.swift */; };
+		A10000000000000000000053 /* InsightInteractionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000053 /* InsightInteractionStore.swift */; };
+		A10000000000000000000054 /* InsightInteractionStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000054 /* InsightInteractionStoreTests.swift */; };
+		A10000000000000000000055 /* EffectiveMethod.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000055 /* EffectiveMethod.swift */; };
+		A10000000000000000000056 /* EffectiveMethodTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000056 /* EffectiveMethodTests.swift */; };
+		A10000000000000000000057 /* EffectiveMethodVisibilityStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000057 /* EffectiveMethodVisibilityStore.swift */; };
+		A10000000000000000000058 /* NotificationAuthorization.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000058 /* NotificationAuthorization.swift */; };
+		A10000000000000000000059 /* NotificationAuthorizationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000059 /* NotificationAuthorizationTests.swift */; };
+		A10000000000000000000060 /* DailyCheckInReminder.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000060 /* DailyCheckInReminder.swift */; };
+		A10000000000000000000061 /* DailyCheckInReminderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000061 /* DailyCheckInReminderTests.swift */; };
+		A10000000000000000000062 /* MicroPlanReminder.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000062 /* MicroPlanReminder.swift */; };
+		A10000000000000000000063 /* MicroPlanReminderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000063 /* MicroPlanReminderTests.swift */; };
+		A10000000000000000000064 /* LowFrequencyTrendReminder.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000064 /* LowFrequencyTrendReminder.swift */; };
+		A10000000000000000000065 /* LowFrequencyTrendReminderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000065 /* LowFrequencyTrendReminderTests.swift */; };
+		A10000000000000000000066 /* NotificationDeliverySettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000066 /* NotificationDeliverySettings.swift */; };
+		A10000000000000000000067 /* NotificationDeliverySettingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000067 /* NotificationDeliverySettingsTests.swift */; };
+		A10000000000000000000068 /* ReminderLockScreenPrivacy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000068 /* ReminderLockScreenPrivacy.swift */; };
+		A10000000000000000000069 /* ReminderLockScreenPrivacyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000069 /* ReminderLockScreenPrivacyTests.swift */; };
+		A1000000000000000000006A /* SevenDayHealthSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000006A /* SevenDayHealthSummary.swift */; };
+		A1000000000000000000006B /* SevenDayHealthSummaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000006B /* SevenDayHealthSummaryView.swift */; };
+		A1000000000000000000006C /* SevenDayHealthSummaryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000006C /* SevenDayHealthSummaryTests.swift */; };
+		A1000000000000000000006D /* SevenDayHealthReportExport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000006D /* SevenDayHealthReportExport.swift */; };
+		A1000000000000000000006E /* SevenDayHealthReportExportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000006E /* SevenDayHealthReportExportTests.swift */; };
+		A1000000000000000000006F /* PrivacyDataFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000006F /* PrivacyDataFlow.swift */; };
+		A10000000000000000000070 /* PrivacyDataFlowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000070 /* PrivacyDataFlowView.swift */; };
+		A10000000000000000000071 /* PrivacyDataFlowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000071 /* PrivacyDataFlowTests.swift */; };
 		A1000000000000000000001D /* HealthDataQualityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000022 /* HealthDataQualityTests.swift */; };
 		A1000000000000000000001E /* InsightsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000023 /* InsightsView.swift */; };
 		A1000000000000000000001F /* HealthMetricDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000024 /* HealthMetricDetailView.swift */; };
@@ -62,6 +93,22 @@
 		A10000000000000000000035 /* AssistantConversationStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000003A /* AssistantConversationStore.swift */; };
 		A10000000000000000000036 /* MicroPlanView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000003B /* MicroPlanView.swift */; };
 		A10000000000000000000037 /* PlanAnalysisMetadataStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000003C /* PlanAnalysisMetadataStore.swift */; };
+		A10000000000000000000038 /* SubjectiveRecordModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000003D /* SubjectiveRecordModels.swift */; };
+		A10000000000000000000039 /* SubjectiveRecordStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000003E /* SubjectiveRecordStore.swift */; };
+		A1000000000000000000003A /* SubjectiveRecordStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000003F /* SubjectiveRecordStoreTests.swift */; };
+		A10000000000000000000045 /* SubjectiveHistoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000045 /* SubjectiveHistoryTests.swift */; };
+		A10000000000000000000048 /* HealthContextTimelineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000048 /* HealthContextTimelineTests.swift */; };
+		A1000000000000000000004B /* StateComparisonTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000004B /* StateComparisonTests.swift */; };
+		A1000000000000000000004D /* InsightTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000004D /* InsightTests.swift */; };
+		A1000000000000000000004F /* InsightFactGeneratorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000004F /* InsightFactGeneratorTests.swift */; };
+		A10000000000000000000052 /* InsightContextMatchingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000052 /* InsightContextMatchingTests.swift */; };
+		A1000000000000000000003B /* SubjectiveCheckInSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000040 /* SubjectiveCheckInSession.swift */; };
+		A10000000000000000000041 /* ContextEventSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000041 /* ContextEventSession.swift */; };
+		A10000000000000000000043 /* SubjectiveHistorySession.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000043 /* SubjectiveHistorySession.swift */; };
+		A10000000000000000000042 /* ContextEventView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000042 /* ContextEventView.swift */; };
+		A10000000000000000000044 /* SubjectiveHistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000044 /* SubjectiveHistoryView.swift */; };
+		A10000000000000000000047 /* HealthContextTimelineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000047 /* HealthContextTimelineView.swift */; };
+		A1000000000000000000004A /* StateComparisonCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000004A /* StateComparisonCard.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -108,6 +155,12 @@
 		A2000000000000000000001F /* DemoHealthDataService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoHealthDataService.swift; sourceTree = "<group>"; };
 		A20000000000000000000020 /* DemoHealthDataServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoHealthDataServiceTests.swift; sourceTree = "<group>"; };
 		A20000000000000000000021 /* HealthDataQuality.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthDataQuality.swift; sourceTree = "<group>"; };
+		A20000000000000000000046 /* HealthContextTimeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthContextTimeline.swift; sourceTree = "<group>"; };
+		A20000000000000000000049 /* StateComparison.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StateComparison.swift; sourceTree = "<group>"; };
+		A2000000000000000000004C /* Insight.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Insight.swift; sourceTree = "<group>"; };
+		A2000000000000000000004E /* InsightFactGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightFactGenerator.swift; sourceTree = "<group>"; };
+		A20000000000000000000050 /* InsightContextMatching.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightContextMatching.swift; sourceTree = "<group>"; };
+		A20000000000000000000051 /* InsightContextLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightContextLoader.swift; sourceTree = "<group>"; };
 		A20000000000000000000022 /* HealthDataQualityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthDataQualityTests.swift; sourceTree = "<group>"; };
 		A20000000000000000000023 /* InsightsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightsView.swift; sourceTree = "<group>"; };
 		A20000000000000000000024 /* HealthMetricDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthMetricDetailView.swift; sourceTree = "<group>"; };
@@ -135,6 +188,47 @@
 		A2000000000000000000003A /* AssistantConversationStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantConversationStore.swift; sourceTree = "<group>"; };
 		A2000000000000000000003B /* MicroPlanView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MicroPlanView.swift; sourceTree = "<group>"; };
 		A2000000000000000000003C /* PlanAnalysisMetadataStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlanAnalysisMetadataStore.swift; sourceTree = "<group>"; };
+		A2000000000000000000003D /* SubjectiveRecordModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubjectiveRecordModels.swift; sourceTree = "<group>"; };
+		A2000000000000000000003E /* SubjectiveRecordStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubjectiveRecordStore.swift; sourceTree = "<group>"; };
+		A2000000000000000000003F /* SubjectiveRecordStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubjectiveRecordStoreTests.swift; sourceTree = "<group>"; };
+		A20000000000000000000045 /* SubjectiveHistoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubjectiveHistoryTests.swift; sourceTree = "<group>"; };
+		A20000000000000000000048 /* HealthContextTimelineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthContextTimelineTests.swift; sourceTree = "<group>"; };
+		A2000000000000000000004B /* StateComparisonTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StateComparisonTests.swift; sourceTree = "<group>"; };
+		A2000000000000000000004D /* InsightTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightTests.swift; sourceTree = "<group>"; };
+		A2000000000000000000004F /* InsightFactGeneratorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightFactGeneratorTests.swift; sourceTree = "<group>"; };
+		A20000000000000000000052 /* InsightContextMatchingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightContextMatchingTests.swift; sourceTree = "<group>"; };
+		A20000000000000000000053 /* InsightInteractionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightInteractionStore.swift; sourceTree = "<group>"; };
+		A20000000000000000000054 /* InsightInteractionStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightInteractionStoreTests.swift; sourceTree = "<group>"; };
+		A20000000000000000000055 /* EffectiveMethod.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EffectiveMethod.swift; sourceTree = "<group>"; };
+		A20000000000000000000056 /* EffectiveMethodTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EffectiveMethodTests.swift; sourceTree = "<group>"; };
+		A20000000000000000000057 /* EffectiveMethodVisibilityStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EffectiveMethodVisibilityStore.swift; sourceTree = "<group>"; };
+		A20000000000000000000058 /* NotificationAuthorization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationAuthorization.swift; sourceTree = "<group>"; };
+		A20000000000000000000059 /* NotificationAuthorizationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationAuthorizationTests.swift; sourceTree = "<group>"; };
+		A20000000000000000000060 /* DailyCheckInReminder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DailyCheckInReminder.swift; sourceTree = "<group>"; };
+		A20000000000000000000061 /* DailyCheckInReminderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DailyCheckInReminderTests.swift; sourceTree = "<group>"; };
+		A20000000000000000000062 /* MicroPlanReminder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MicroPlanReminder.swift; sourceTree = "<group>"; };
+		A20000000000000000000063 /* MicroPlanReminderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MicroPlanReminderTests.swift; sourceTree = "<group>"; };
+		A20000000000000000000064 /* LowFrequencyTrendReminder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LowFrequencyTrendReminder.swift; sourceTree = "<group>"; };
+		A20000000000000000000065 /* LowFrequencyTrendReminderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LowFrequencyTrendReminderTests.swift; sourceTree = "<group>"; };
+		A20000000000000000000066 /* NotificationDeliverySettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationDeliverySettings.swift; sourceTree = "<group>"; };
+		A20000000000000000000067 /* NotificationDeliverySettingsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationDeliverySettingsTests.swift; sourceTree = "<group>"; };
+		A20000000000000000000068 /* ReminderLockScreenPrivacy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReminderLockScreenPrivacy.swift; sourceTree = "<group>"; };
+		A20000000000000000000069 /* ReminderLockScreenPrivacyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReminderLockScreenPrivacyTests.swift; sourceTree = "<group>"; };
+		A2000000000000000000006A /* SevenDayHealthSummary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SevenDayHealthSummary.swift; sourceTree = "<group>"; };
+		A2000000000000000000006B /* SevenDayHealthSummaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SevenDayHealthSummaryView.swift; sourceTree = "<group>"; };
+		A2000000000000000000006C /* SevenDayHealthSummaryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SevenDayHealthSummaryTests.swift; sourceTree = "<group>"; };
+		A2000000000000000000006D /* SevenDayHealthReportExport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SevenDayHealthReportExport.swift; sourceTree = "<group>"; };
+		A2000000000000000000006E /* SevenDayHealthReportExportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SevenDayHealthReportExportTests.swift; sourceTree = "<group>"; };
+		A2000000000000000000006F /* PrivacyDataFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivacyDataFlow.swift; sourceTree = "<group>"; };
+		A20000000000000000000070 /* PrivacyDataFlowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivacyDataFlowView.swift; sourceTree = "<group>"; };
+		A20000000000000000000071 /* PrivacyDataFlowTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivacyDataFlowTests.swift; sourceTree = "<group>"; };
+		A20000000000000000000040 /* SubjectiveCheckInSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubjectiveCheckInSession.swift; sourceTree = "<group>"; };
+		A20000000000000000000041 /* ContextEventSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextEventSession.swift; sourceTree = "<group>"; };
+		A20000000000000000000043 /* SubjectiveHistorySession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubjectiveHistorySession.swift; sourceTree = "<group>"; };
+		A20000000000000000000042 /* ContextEventView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextEventView.swift; sourceTree = "<group>"; };
+		A20000000000000000000044 /* SubjectiveHistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubjectiveHistoryView.swift; sourceTree = "<group>"; };
+		A20000000000000000000047 /* HealthContextTimelineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthContextTimelineView.swift; sourceTree = "<group>"; };
+		A2000000000000000000004A /* StateComparisonCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StateComparisonCard.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -205,6 +299,24 @@
 				A2000000000000000000002D /* InsightsDashboardPresentationTests.swift */,
 				A20000000000000000000030 /* HealthDataSessionTests.swift */,
 				A20000000000000000000038 /* HealthAIFeatureTests.swift */,
+				A2000000000000000000003F /* SubjectiveRecordStoreTests.swift */,
+				A20000000000000000000045 /* SubjectiveHistoryTests.swift */,
+				A20000000000000000000048 /* HealthContextTimelineTests.swift */,
+				A2000000000000000000004B /* StateComparisonTests.swift */,
+				A2000000000000000000004D /* InsightTests.swift */,
+				A2000000000000000000004F /* InsightFactGeneratorTests.swift */,
+				A20000000000000000000052 /* InsightContextMatchingTests.swift */,
+				A20000000000000000000054 /* InsightInteractionStoreTests.swift */,
+				A20000000000000000000056 /* EffectiveMethodTests.swift */,
+				A20000000000000000000059 /* NotificationAuthorizationTests.swift */,
+				A20000000000000000000061 /* DailyCheckInReminderTests.swift */,
+				A20000000000000000000063 /* MicroPlanReminderTests.swift */,
+				A20000000000000000000065 /* LowFrequencyTrendReminderTests.swift */,
+				A20000000000000000000067 /* NotificationDeliverySettingsTests.swift */,
+				A20000000000000000000069 /* ReminderLockScreenPrivacyTests.swift */,
+				A2000000000000000000006C /* SevenDayHealthSummaryTests.swift */,
+				A2000000000000000000006E /* SevenDayHealthReportExportTests.swift */,
+				A20000000000000000000071 /* PrivacyDataFlowTests.swift */,
 			);
 			path = ZhihengTests;
 			sourceTree = "<group>";
@@ -234,11 +346,20 @@
 				A20000000000000000000009 /* HealthMetricSample.swift */,
 				A2000000000000000000000C /* CarePlanModels.swift */,
 				A20000000000000000000021 /* HealthDataQuality.swift */,
+				A20000000000000000000046 /* HealthContextTimeline.swift */,
+				A20000000000000000000049 /* StateComparison.swift */,
+				A2000000000000000000004C /* Insight.swift */,
+				A2000000000000000000004E /* InsightFactGenerator.swift */,
+				A20000000000000000000050 /* InsightContextMatching.swift */,
+				A20000000000000000000055 /* EffectiveMethod.swift */,
+				A2000000000000000000006A /* SevenDayHealthSummary.swift */,
+				A2000000000000000000006F /* PrivacyDataFlow.swift */,
 				A20000000000000000000025 /* HealthBaseline.swift */,
 				A20000000000000000000027 /* TodayDashboardModels.swift */,
 				A20000000000000000000029 /* TodayDashboardPresentation.swift */,
 				A2000000000000000000002C /* InsightsDashboardPresentation.swift */,
 				A20000000000000000000032 /* HealthAIModels.swift */,
+				A2000000000000000000003D /* SubjectiveRecordModels.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -271,6 +392,22 @@
 				A20000000000000000000012 /* AppStatusView.swift */,
 				A2000000000000000000002E /* HRVStatusFace.swift */,
 				A2000000000000000000002F /* HealthDataSession.swift */,
+				A20000000000000000000040 /* SubjectiveCheckInSession.swift */,
+				A20000000000000000000042 /* ContextEventView.swift */,
+				A20000000000000000000044 /* SubjectiveHistoryView.swift */,
+				A20000000000000000000047 /* HealthContextTimelineView.swift */,
+				A2000000000000000000004A /* StateComparisonCard.swift */,
+				A20000000000000000000041 /* ContextEventSession.swift */,
+				A20000000000000000000043 /* SubjectiveHistorySession.swift */,
+				A20000000000000000000058 /* NotificationAuthorization.swift */,
+				A20000000000000000000060 /* DailyCheckInReminder.swift */,
+				A20000000000000000000062 /* MicroPlanReminder.swift */,
+				A20000000000000000000064 /* LowFrequencyTrendReminder.swift */,
+				A20000000000000000000066 /* NotificationDeliverySettings.swift */,
+				A20000000000000000000068 /* ReminderLockScreenPrivacy.swift */,
+				A2000000000000000000006B /* SevenDayHealthSummaryView.swift */,
+				A2000000000000000000006D /* SevenDayHealthReportExport.swift */,
+				A20000000000000000000070 /* PrivacyDataFlowView.swift */,
 			);
 			path = Components;
 			sourceTree = "<group>";
@@ -289,6 +426,10 @@
 			isa = PBXGroup;
 			children = (
 				A2000000000000000000003C /* PlanAnalysisMetadataStore.swift */,
+				A2000000000000000000003E /* SubjectiveRecordStore.swift */,
+				A20000000000000000000051 /* InsightContextLoader.swift */,
+				A20000000000000000000053 /* InsightInteractionStore.swift */,
+				A20000000000000000000057 /* EffectiveMethodVisibilityStore.swift */,
 				A5000000000000000000000C /* CareKit */,
 				A5000000000000000000000E /* HealthKit */,
 				A5000000000000000000000F /* Demo */,
@@ -515,6 +656,15 @@
 				A10000000000000000000018 /* HealthKitDataService.swift in Sources */,
 				A1000000000000000000001A /* DemoHealthDataService.swift in Sources */,
 				A1000000000000000000001C /* HealthDataQuality.swift in Sources */,
+				A10000000000000000000046 /* HealthContextTimeline.swift in Sources */,
+				A10000000000000000000049 /* StateComparison.swift in Sources */,
+				A1000000000000000000004C /* Insight.swift in Sources */,
+				A1000000000000000000004E /* InsightFactGenerator.swift in Sources */,
+				A10000000000000000000050 /* InsightContextMatching.swift in Sources */,
+				A10000000000000000000051 /* InsightContextLoader.swift in Sources */,
+				A10000000000000000000053 /* InsightInteractionStore.swift in Sources */,
+				A10000000000000000000055 /* EffectiveMethod.swift in Sources */,
+				A10000000000000000000057 /* EffectiveMethodVisibilityStore.swift in Sources */,
 				A10000000000000000000020 /* HealthBaseline.swift in Sources */,
 				A10000000000000000000022 /* TodayDashboardModels.swift in Sources */,
 				A10000000000000000000024 /* TodayDashboardPresentation.swift in Sources */,
@@ -532,6 +682,26 @@
 				A10000000000000000000032 /* AssistantView.swift in Sources */,
 				A10000000000000000000036 /* MicroPlanView.swift in Sources */,
 				A10000000000000000000037 /* PlanAnalysisMetadataStore.swift in Sources */,
+				A10000000000000000000038 /* SubjectiveRecordModels.swift in Sources */,
+				A10000000000000000000039 /* SubjectiveRecordStore.swift in Sources */,
+				A1000000000000000000003B /* SubjectiveCheckInSession.swift in Sources */,
+				A10000000000000000000042 /* ContextEventView.swift in Sources */,
+				A10000000000000000000044 /* SubjectiveHistoryView.swift in Sources */,
+				A10000000000000000000047 /* HealthContextTimelineView.swift in Sources */,
+				A1000000000000000000004A /* StateComparisonCard.swift in Sources */,
+				A10000000000000000000041 /* ContextEventSession.swift in Sources */,
+				A10000000000000000000043 /* SubjectiveHistorySession.swift in Sources */,
+				A10000000000000000000058 /* NotificationAuthorization.swift in Sources */,
+				A10000000000000000000060 /* DailyCheckInReminder.swift in Sources */,
+				A10000000000000000000062 /* MicroPlanReminder.swift in Sources */,
+				A10000000000000000000064 /* LowFrequencyTrendReminder.swift in Sources */,
+				A10000000000000000000066 /* NotificationDeliverySettings.swift in Sources */,
+				A10000000000000000000068 /* ReminderLockScreenPrivacy.swift in Sources */,
+				A1000000000000000000006A /* SevenDayHealthSummary.swift in Sources */,
+				A1000000000000000000006B /* SevenDayHealthSummaryView.swift in Sources */,
+				A1000000000000000000006D /* SevenDayHealthReportExport.swift in Sources */,
+				A1000000000000000000006F /* PrivacyDataFlow.swift in Sources */,
+				A10000000000000000000070 /* PrivacyDataFlowView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -556,6 +726,24 @@
 				A10000000000000000000028 /* InsightsDashboardPresentationTests.swift in Sources */,
 				A1000000000000000000002B /* HealthDataSessionTests.swift in Sources */,
 				A10000000000000000000033 /* HealthAIFeatureTests.swift in Sources */,
+				A1000000000000000000003A /* SubjectiveRecordStoreTests.swift in Sources */,
+				A10000000000000000000045 /* SubjectiveHistoryTests.swift in Sources */,
+				A10000000000000000000048 /* HealthContextTimelineTests.swift in Sources */,
+				A1000000000000000000004B /* StateComparisonTests.swift in Sources */,
+				A1000000000000000000004D /* InsightTests.swift in Sources */,
+				A1000000000000000000004F /* InsightFactGeneratorTests.swift in Sources */,
+				A10000000000000000000052 /* InsightContextMatchingTests.swift in Sources */,
+				A10000000000000000000054 /* InsightInteractionStoreTests.swift in Sources */,
+				A10000000000000000000056 /* EffectiveMethodTests.swift in Sources */,
+				A10000000000000000000059 /* NotificationAuthorizationTests.swift in Sources */,
+				A10000000000000000000061 /* DailyCheckInReminderTests.swift in Sources */,
+				A10000000000000000000063 /* MicroPlanReminderTests.swift in Sources */,
+				A10000000000000000000065 /* LowFrequencyTrendReminderTests.swift in Sources */,
+				A10000000000000000000067 /* NotificationDeliverySettingsTests.swift in Sources */,
+				A10000000000000000000069 /* ReminderLockScreenPrivacyTests.swift in Sources */,
+				A1000000000000000000006C /* SevenDayHealthSummaryTests.swift in Sources */,
+				A1000000000000000000006E /* SevenDayHealthReportExportTests.swift in Sources */,
+				A10000000000000000000071 /* PrivacyDataFlowTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
