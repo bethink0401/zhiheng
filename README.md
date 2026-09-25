@@ -95,13 +95,9 @@ xcodebuild test \
 
 ## 项目文档
 
-- [开发需求规范](docs/development-requirements.md)
-- [技术设计规范](docs/technical-design-spec.md)
-- [实施总方案](docs/implementation-plan-v1.md)
-- [隐私说明与数据流](docs/privacy-data-flow.md)
-- [开发执行步骤](docs/execution-steps.md)
-- [每日开发日志](开发日志/README.md)
 - [第三方开源声明](THIRD_PARTY_NOTICES.md)
+
+产品施工记录、比赛材料和本地开发日志不随源码仓库发布。
 
 ## 当前状态
 
