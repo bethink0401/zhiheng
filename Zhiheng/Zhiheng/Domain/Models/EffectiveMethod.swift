@@ -810,6 +810,126 @@ enum EffectiveMethodConfidenceRule {
     }
 }
 
+/// Deterministic read-only cards for the synthetic demo person. They still pass
+/// through the production completion, quality and confidence factories, so the
+/// displayed 80% and "可能适合" labels are derived facts rather than copy.
+enum DemoEffectiveMethodFactory {
+    static func cards(
+        endingAt referenceDate: Date,
+        calendar: Calendar = .current
+    ) -> [EffectiveMethodCardPresentation] {
+        guard let template = MicroPlanTemplateLibrary.template(for: .earlierBedtime),
+              let first = run(template: template, startOffset: -48, endingAt: referenceDate, calendar: calendar),
+              let second = run(template: template, startOffset: -16, endingAt: referenceDate, calendar: calendar),
+              let candidate = EffectiveMethodCandidate(
+                sourcePlanTemplateID: template.id,
+                title: template.title,
+                runs: [second.run, first.run]
+              )
+        else { return [] }
+
+        return [EffectiveMethodCardPresentationFactory.make(
+            candidate: candidate,
+            evaluations: [second.evaluation, first.evaluation]
+        )]
+    }
+
+    private static func run(
+        template: MicroPlanTemplate,
+        startOffset: Int,
+        endingAt referenceDate: Date,
+        calendar: Calendar
+    ) -> (run: EffectiveMethodCandidateRun, evaluation: EffectiveMethodRunEvaluationFact)? {
+        guard let start = calendar.date(byAdding: .day, value: startOffset, to: referenceDate),
+              let draft = try? template.makeDraft(
+                referenceDate: start,
+                calendar: calendar,
+                uniqueID: deterministicUUID(startOffset)
+              ) else { return nil }
+        let plan = MicroPlan(draft: draft, status: .completed)
+        let completedIndexes = startOffset == -48 ? [0, 1, 2, 4] : [0, 1, 2, 3]
+        let skippedIndex = startOffset == -48 ? 3 : 4
+        let outcomes = completedIndexes.compactMap { index in
+            outcome(
+                index: index,
+                state: .completed,
+                plan: plan,
+                calendar: calendar
+            )
+        } + [outcome(
+            index: skippedIndex,
+            state: .skipped,
+            plan: plan,
+            calendar: calendar
+        )].compactMap { $0 }
+        guard let progress = try? MicroPlanProgress(
+            scheduledCount: 5,
+            completedCount: 4,
+            skippedCount: 1
+        ), let run = try? EffectiveMethodCandidateRun(
+            plan: plan,
+            outcomes: outcomes,
+            progress: progress
+        ) else { return nil }
+
+        let beforeSleep = startOffset == -48 ? 6.92 : 6.88
+        let planSleep = startOffset == -48 ? 7.18 : 7.36
+        let objective = MicroPlanEvaluationMetricFact(
+            metric: .sleepDuration,
+            healthMetric: .sleepDuration,
+            beforeMedian: beforeSleep,
+            planMedian: planSleep,
+            changeFromBefore: planSleep - beforeSleep,
+            beforeValidDayCount: 5,
+            planValidDayCount: 5,
+            direction: .favorable
+        )
+        let subjective = EffectiveMethodSubjectiveRunChange(
+            state: .available,
+            metrics: [
+                .init(dimension: .energy, beforeMedian: 3, planMedian: 4),
+                .init(dimension: .stress, beforeMedian: 3, planMedian: 2),
+                .init(dimension: .bodyFeeling, beforeMedian: 3, planMedian: 4)
+            ],
+            beforeRecordedDayCount: 5,
+            planRecordedDayCount: 5
+        )
+        return (run, EffectiveMethodRunEvaluationFact(
+            carePlanID: plan.draft.id,
+            verdict: .mayHaveHelped,
+            dataQuality: .sufficient,
+            objectiveDataQuality: .sufficient,
+            objectiveMetrics: [objective],
+            subjectiveChange: subjective
+        ))
+    }
+
+    private static func outcome(
+        index: Int,
+        state: PlanOutcomeState,
+        plan: MicroPlan,
+        calendar: Calendar
+    ) -> PlanOutcomeRecord? {
+        guard let day = calendar.date(byAdding: .day, value: index, to: plan.draft.startDate),
+              let time = calendar.date(bySettingHour: 22, minute: 35, second: 0, of: day)
+        else { return nil }
+        return PlanOutcomeRecord(
+            occurrenceIndex: index,
+            state: state,
+            recordedAt: time,
+            feedback: state == .completed && index == 3
+                ? "当晚更容易收尾，早上的精力感受也更好。"
+                : nil
+        )
+    }
+
+    private static func deterministicUUID(_ offset: Int) -> UUID {
+        UUID(uuidString: offset == -48
+             ? "20000000-0000-4000-8000-000000000048"
+             : "20000000-0000-4000-8000-000000000016")!
+    }
+}
+
 enum EffectiveMethodCandidateGenerator {
     /// 从 CareKit 的唯一执行事实来源生成内存候选。
     ///

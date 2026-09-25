@@ -718,7 +718,13 @@ final class EffectiveMethodTests: XCTestCase {
         await session.refreshEffectiveMethods(snapshot: nil, dataMode: .demo)
 
         let historyRequestCount = await source.historyRequestCount()
-        XCTAssertEqual(session.effectiveMethodsState, .demoMode)
+        guard case .loaded(let cards) = session.effectiveMethodsState else {
+            return XCTFail("Expected synthetic demo methods")
+        }
+        XCTAssertEqual(cards.count, 1)
+        XCTAssertEqual(cards.first?.sourcePlanTemplateID, .earlierBedtime)
+        XCTAssertEqual(cards.first?.executionCount, 2)
+        XCTAssertEqual(cards.first?.completion.completionRate, 0.8)
         XCTAssertEqual(historyRequestCount, 0)
     }
 
@@ -1305,7 +1311,10 @@ final class EffectiveMethodTests: XCTestCase {
         )
 
         XCTAssertFalse(didHide)
-        XCTAssertEqual(session.effectiveMethodsState, .demoMode)
+        guard case .loaded(let cards) = session.effectiveMethodsState else {
+            return XCTFail("Expected synthetic demo methods")
+        }
+        XCTAssertEqual(cards.map(\.sourcePlanTemplateID), [.earlierBedtime])
         XCTAssertEqual(visibility.readCount, 0)
         XCTAssertEqual(visibility.writeCount, 0)
         let historyReadCount = await source.historyRequestCount()

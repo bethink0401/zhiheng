@@ -35,7 +35,8 @@ final class AssistantViewModel: ObservableObject {
             errorMessage = "无法恢复之前的对话，本次对话仍可继续。"
         }
 #if DEBUG
-        if ProcessInfo.processInfo.arguments.contains("--assistant-seed-plan-preview"),
+        if (ProcessInfo.processInfo.arguments.contains("--assistant-seed-plan-preview")
+            || ProcessInfo.processInfo.arguments.contains("--demo-showcase-recording")),
            messages.isEmpty {
             messages = Self.planCandidatePreviewMessages
         }
@@ -67,12 +68,80 @@ final class AssistantViewModel: ObservableObject {
             )
         ),
     ]
+
+    func runInteractiveShowcase() {
+        Task { @MainActor in
+            messages.removeAll()
+            draft = ""
+            try? await Task.sleep(for: .seconds(1))
+            let textToType = "结合我最近的记录，给我一个容易开始的微计划。"
+            for char in textToType {
+                draft.append(char)
+                try? await Task.sleep(for: .milliseconds(75))
+            }
+            try? await Task.sleep(for: .milliseconds(900))
+            let userMessage = AssistantChatMessage(
+                role: .user,
+                text: textToType
+            )
+            messages.append(userMessage)
+            draft = ""
+            isSending = true
+            try? await Task.sleep(for: .seconds(2))
+            isSending = false
+            let firstAIResponse = AssistantChatMessage(
+                role: .assistant,
+                text: "根据近 7 天的数据，你的 HRV 较 28 天个人基线偏低 15%，同时今天记录了较高的主观压力和加班情境。这说明身体处于持续消耗状态，恢复窗口不足。",
+                response: HealthAIResponse(
+                    summary: "根据近 7 天的数据，你的 HRV 较 28 天个人基线偏低 15%，同时今天记录了较高的主观压力和加班情境。这说明身体处于持续消耗状态，恢复窗口不足。",
+                    observedFacts: ["近7天HRV低于个人稳健基线15%", "今日记录压力偏高(4/5)", "生活事件：加班到深夜"],
+                    possibleFactors: ["连续高压加班", "深度睡眠窗口压缩"],
+                    uncertainty: "短期指标波动需结合实际休息情况综合观察",
+                    followUpQuestion: "想再了解一下：我注意到你最近有连续加班记录，昨晚的入睡时间是否比平时推迟了？",
+                    suggestedAction: nil,
+                    safetyLevel: .normal,
+                    usedMetrics: [.heartRateVariability, .restingHeartRate],
+                    supportiveClosing: "请在下方告诉我你昨晚的入睡情况。"
+                )
+            )
+            messages.append(firstAIResponse)
+            try? await Task.sleep(for: .seconds(8))
+            let userFollowUpAnswer = AssistantChatMessage(
+                role: .user,
+                text: "确实比平时晚睡了差不多一个小时，早上起来感觉头很沉。"
+            )
+            messages.append(userFollowUpAnswer)
+            isSending = true
+            try? await Task.sleep(for: .seconds(2))
+            isSending = false
+            let finalAIResponse = AssistantChatMessage(
+                role: .assistant,
+                text: "入睡推迟会直接影响深度睡眠阶段的心率恢复与自主神经调节。本地安全校验已通过（非医疗诊断）。建议先从一个负担较小的作息微调开始，观察身体状态是否逐步好转。",
+                response: HealthAIResponse(
+                    summary: "入睡推迟会直接影响深度睡眠阶段的心率恢复与自主神经调节。建议先从一个负担较小的作息微调开始，观察身体状态是否逐步好转。",
+                    observedFacts: ["昨晚入睡推迟约1小时", "晨起主观精力偏低"],
+                    possibleFactors: ["晚睡导致慢波睡眠减少"],
+                    uncertainty: "单次作息微调主要观察反应，不作治疗承诺",
+                    followUpQuestion: nil,
+                    suggestedAction: HealthAISuggestedAction(
+                        templateID: .earlierBedtime,
+                        rationale: "每天比平时提前 30 分钟上床准备，连续观察 5 天，行动明确且负担轻。完成后结合睡眠时长、第二天的精力感受和完成率，评估是否适合你的节奏。"
+                    ),
+                    safetyLevel: .normal,
+                    usedMetrics: [.heartRateVariability, .sleepDuration],
+                    supportiveClosing: "不用追求一次做到完美，先尝试今晚提前放下手机、放松躺下。"
+                )
+            )
+            messages.append(finalAIResponse)
+        }
+    }
 #endif
 
     func submit(
         snapshot: HealthDataSnapshot?,
         dataMode: HealthDataMode,
-        referenceDate: Date = Date()
+        referenceDate: Date = Date(),
+        supplementalFacts: HealthFactSupplementalFacts? = nil
     ) {
         let question = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !question.isEmpty, !isSending else { return }
@@ -81,7 +150,8 @@ final class AssistantViewModel: ObservableObject {
             question: question,
             snapshot: snapshot,
             dataMode: dataMode,
-            referenceDate: referenceDate
+            referenceDate: referenceDate,
+            supplementalFacts: supplementalFacts
         )
     }
 
@@ -89,21 +159,24 @@ final class AssistantViewModel: ObservableObject {
         _ question: String,
         snapshot: HealthDataSnapshot?,
         dataMode: HealthDataMode,
-        referenceDate: Date = Date()
+        referenceDate: Date = Date(),
+        supplementalFacts: HealthFactSupplementalFacts? = nil
     ) {
         guard !isSending else { return }
         send(
             question: question,
             snapshot: snapshot,
             dataMode: dataMode,
-            referenceDate: referenceDate
+            referenceDate: referenceDate,
+            supplementalFacts: supplementalFacts
         )
     }
 
     func retry(
         snapshot: HealthDataSnapshot?,
         dataMode: HealthDataMode,
-        referenceDate: Date = Date()
+        referenceDate: Date = Date(),
+        supplementalFacts: HealthFactSupplementalFacts? = nil
     ) {
         guard let question = lastFailedQuestion, !isSending else { return }
         send(
@@ -111,6 +184,7 @@ final class AssistantViewModel: ObservableObject {
             snapshot: snapshot,
             dataMode: dataMode,
             referenceDate: referenceDate,
+            supplementalFacts: supplementalFacts,
             appendsUserMessage: false
         )
     }
@@ -145,6 +219,7 @@ final class AssistantViewModel: ObservableObject {
         snapshot: HealthDataSnapshot?,
         dataMode: HealthDataMode,
         referenceDate: Date,
+        supplementalFacts: HealthFactSupplementalFacts?,
         appendsUserMessage: Bool = true
     ) {
         errorMessage = nil
@@ -173,11 +248,13 @@ final class AssistantViewModel: ObservableObject {
             HealthFactPackBuilder.build(
                 snapshot: $0,
                 dataMode: dataMode,
-                referenceDate: referenceDate
+                referenceDate: referenceDate,
+                supplementalFacts: supplementalFacts
             )
         } ?? HealthFactPackBuilder.empty(
             dataMode: dataMode,
-            referenceDate: referenceDate
+            referenceDate: referenceDate,
+            supplementalFacts: supplementalFacts
         )
         let request = HealthAIRequest(
             question: question,
@@ -317,7 +394,10 @@ final class AssistantViewModel: ObservableObject {
 struct AssistantView: View {
     @ObservedObject var healthSession: HealthDataSession
     @ObservedObject var planSession: MicroPlanSession
+    @ObservedObject var checkInCoordinator: DailyCheckInCoordinator
     @StateObject private var viewModel: AssistantViewModel
+    let contextLoader: AssistantFactContextLoader
+    let includesSyntheticDemoFacts: Bool
     let onPlanStarted: () -> Void
     @FocusState private var isComposerFocused: Bool
     @State private var didStartDebugSmokeQuestion = false
@@ -325,12 +405,18 @@ struct AssistantView: View {
     init(
         healthSession: HealthDataSession,
         planSession: MicroPlanSession,
+        checkInCoordinator: DailyCheckInCoordinator,
+        contextLoader: AssistantFactContextLoader,
+        includesSyntheticDemoFacts: Bool = false,
         onPlanStarted: @escaping () -> Void,
         service: any AIService = PersonalAIService(),
         conversationScope: HealthDataMode = .live
     ) {
         self.healthSession = healthSession
         self.planSession = planSession
+        self.checkInCoordinator = checkInCoordinator
+        self.contextLoader = contextLoader
+        self.includesSyntheticDemoFacts = includesSyntheticDemoFacts
         self.onPlanStarted = onPlanStarted
         _viewModel = StateObject(
             wrappedValue: AssistantViewModel(
@@ -349,9 +435,6 @@ struct AssistantView: View {
                     LazyVStack(spacing: 16) {
                         assistantHeader
                         if viewModel.messages.isEmpty {
-                            if healthSession.dataMode == .demo {
-                                demoNotice
-                            }
                             welcome
                         } else {
                             ForEach(viewModel.messages) { message in
@@ -429,25 +512,16 @@ struct AssistantView: View {
     private func runDebugSmokeQuestionIfNeeded() {
 #if DEBUG
         guard !didStartDebugSmokeQuestion,
-              ProcessInfo.processInfo.arguments.contains("--assistant-smoke-question"),
               healthSession.snapshot != nil
         else { return }
-        didStartDebugSmokeQuestion = true
-        viewModel.askSuggestedQuestion(
-            "我最近睡得怎么样？",
-            snapshot: healthSession.snapshot,
-            dataMode: healthSession.dataMode
-        )
+        if ProcessInfo.processInfo.arguments.contains("--assistant-smoke-question") {
+            didStartDebugSmokeQuestion = true
+            sendSuggestedQuestion("我最近睡得怎么样？")
+        } else if ProcessInfo.processInfo.arguments.contains("--demo-showcase-recording") {
+            didStartDebugSmokeQuestion = true
+            viewModel.runInteractiveShowcase()
+        }
 #endif
-    }
-
-    private var demoNotice: some View {
-        Label("当前使用演示数据，不是你的真实健康记录", systemImage: "theatermasks")
-            .font(.footnote.weight(.medium))
-            .foregroundStyle(.orange)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(12)
-            .background(.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 14))
     }
 
     private var welcome: some View {
@@ -458,7 +532,7 @@ struct AssistantView: View {
                     .foregroundStyle(.teal)
                 Text("今天想了解什么？")
                     .font(.title.bold())
-                Text("可以询问一般健康问题，也可以结合你授权的睡眠、活动、心率、HRV、呼吸、血氧、腕温、步态和心肺适能记录继续聊。")
+                Text("可以询问一般健康问题，也可以结合你授权的健康趋势、今日与近 7 天感受和生活事件（包括你填写的备注与自定义事件名称），以及当前或最近一次微计划记录继续聊。")
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -466,11 +540,7 @@ struct AssistantView: View {
 
             ForEach(viewModel.suggestedQuestions, id: \.self) { question in
                 Button {
-                    viewModel.askSuggestedQuestion(
-                        question,
-                        snapshot: healthSession.snapshot,
-                        dataMode: healthSession.dataMode
-                    )
+                    sendSuggestedQuestion(question)
                 } label: {
                     HStack {
                         Text(question)
@@ -629,10 +699,7 @@ struct AssistantView: View {
                 Text(message)
                     .font(.subheadline)
                 Button("重试") {
-                    viewModel.retry(
-                        snapshot: healthSession.snapshot,
-                        dataMode: healthSession.dataMode
-                    )
+                    retryLastQuestion()
                 }
                 .font(.subheadline.bold())
                 .disabled(viewModel.isSending)
@@ -670,20 +737,14 @@ struct AssistantView: View {
                 .modifier(AssistantInputGlassModifier())
                 .submitLabel(.send)
                 .onSubmit {
-                    viewModel.submit(
-                        snapshot: healthSession.snapshot,
-                        dataMode: healthSession.dataMode
-                    )
+                    submitDraft()
                 }
 
             Button {
                 if viewModel.isSending {
                     viewModel.stop()
                 } else {
-                    viewModel.submit(
-                        snapshot: healthSession.snapshot,
-                        dataMode: healthSession.dataMode
-                    )
+                    submitDraft()
                 }
             } label: {
                 HStack(spacing: 7) {
@@ -702,6 +763,73 @@ struct AssistantView: View {
             .disabled(!viewModel.isSending && viewModel.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
     }
+
+    private func submitDraft() {
+        let referenceDate = Date()
+        viewModel.submit(
+            snapshot: healthSession.snapshot,
+            dataMode: healthSession.dataMode,
+            referenceDate: referenceDate,
+            supplementalFacts: makeSupplementalFacts(referenceDate: referenceDate)
+        )
+    }
+
+    private func sendSuggestedQuestion(_ question: String) {
+        let referenceDate = Date()
+        viewModel.askSuggestedQuestion(
+            question,
+            snapshot: healthSession.snapshot,
+            dataMode: healthSession.dataMode,
+            referenceDate: referenceDate,
+            supplementalFacts: makeSupplementalFacts(referenceDate: referenceDate)
+        )
+    }
+
+    private func retryLastQuestion() {
+        let referenceDate = Date()
+        viewModel.retry(
+            snapshot: healthSession.snapshot,
+            dataMode: healthSession.dataMode,
+            referenceDate: referenceDate,
+            supplementalFacts: makeSupplementalFacts(referenceDate: referenceDate)
+        )
+    }
+
+    private func makeSupplementalFacts(
+        referenceDate: Date = Date(),
+        timeZone: TimeZone = .autoupdatingCurrent
+    ) -> HealthFactSupplementalFacts {
+        let recentContextState: AssistantFactContextLoadState?
+        do {
+            let factSet = try InsightFactGenerator.generate(
+                snapshot: healthSession.snapshot,
+                loadedInterval: healthSession.snapshotInterval,
+                access: healthSession.accessState,
+                dataMode: healthSession.dataMode,
+                referenceDate: referenceDate,
+                timeZone: timeZone
+            )
+            recentContextState = contextLoader.load(for: factSet)
+        } catch {
+            recentContextState = .failed(.invalidFactWindow)
+        }
+        return HealthFactSupplementalFactsBuilder.build(
+            dataMode: healthSession.dataMode,
+            referenceDate: referenceDate,
+            timeZone: timeZone,
+            todayCheckIn: checkInCoordinator.session.savedCheckIn,
+            didLoadTodayCheckIn: checkInCoordinator.session.didLoadRecord,
+            todayContextEvents: checkInCoordinator.contextEvents.events,
+            didLoadTodayContextEvents: checkInCoordinator.contextEvents.didLoadRecords,
+            recentContextState: recentContextState,
+            plan: planSession.displayedPlan,
+            progress: planSession.progress,
+            todayOutcome: planSession.todayOutcomeState,
+            outcomeRecords: planSession.outcomeRecords,
+            didLoadPlan: planSession.hasLoadedStateForCurrentMode,
+            includesSyntheticDemoFacts: includesSyntheticDemoFacts
+        )
+    }
 }
 
 private struct AssistantResponseDetailsView: View {
@@ -712,6 +840,7 @@ private struct AssistantResponseDetailsView: View {
         !response.observedFacts.isEmpty
             || !response.possibleFactors.isEmpty
             || !response.usedMetrics.isEmpty
+            || !(response.usedFactKinds ?? []).isEmpty
     }
 
     var body: some View {
@@ -726,6 +855,12 @@ private struct AssistantResponseDetailsView: View {
                     }
                     if !response.usedMetrics.isEmpty {
                         Text("依据：" + response.usedMetrics.map(\.assistantDisplayName).joined(separator: "、"))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    if let usedFactKinds = response.usedFactKinds,
+                       !usedFactKinds.isEmpty {
+                        Text("事实类别：" + usedFactKinds.map(\.displayName).joined(separator: "、"))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }

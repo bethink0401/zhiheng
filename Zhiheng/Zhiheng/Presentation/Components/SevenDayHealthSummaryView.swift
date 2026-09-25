@@ -19,14 +19,6 @@ struct SevenDayHealthSummaryView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 16) {
                 if let summary {
-                    if summary.dataMode == .demo {
-                        Label("演示摘要，不是你的真实健康记录", systemImage: "theatermasks.fill")
-                            .font(.footnote.weight(.semibold))
-                            .foregroundStyle(.orange)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(12)
-                            .background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 14))
-                    }
                     rangeCard(summary)
                     overviewCard(summary)
                     objectiveCard(summary)

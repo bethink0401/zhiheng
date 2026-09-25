@@ -39,6 +39,7 @@ final class HealthAIFeatureTests: XCTestCase {
 
         XCTAssertEqual(response.summary, "旧回答")
         XCTAssertNil(response.supportiveClosing)
+        XCTAssertNil(response.usedFactKinds)
     }
 
     func testResponsePreservesStructuredSupportiveClosing() throws {
@@ -109,6 +110,72 @@ final class HealthAIFeatureTests: XCTestCase {
         XCTAssertTrue(factPack.unavailableMetrics.allSatisfy {
             $0.reason == .noVisibleData
         })
+    }
+
+    func testPlanEvaluationValidatorAcceptsOnlyItsWhitelistedMetricAndFactKind() throws {
+        let referenceDate = Date(timeIntervalSince1970: 1_800_000_000)
+        let factPack = HealthFactPackBuilder.empty(
+            dataMode: .demo,
+            referenceDate: referenceDate
+        )
+        let evaluation = MicroPlanEvaluationFactPack(
+            planID: "synthetic-plan",
+            planTitle: "提前上床",
+            taskTitle: "比平时提前 30 分钟上床",
+            status: .completed,
+            scheduledCount: 5,
+            completedCount: 4,
+            skippedCount: 1,
+            completionRate: 0.8,
+            userFeedback: ["第二天精力稍好"],
+            metrics: [MicroPlanEvaluationMetricFact(
+                metric: .sleepDuration,
+                healthMetric: .sleepDuration,
+                beforeMedian: 7.1,
+                planMedian: 7.4,
+                changeFromBefore: 0.3,
+                beforeValidDayCount: 5,
+                planValidDayCount: 5,
+                direction: .favorable
+            )],
+            contextStatus: .recorded,
+            contextEvents: [],
+            dataQualitySummary: "1 项指标有完整基线",
+            localVerdict: .mayHaveHelped
+        )
+        let response = HealthAIResponse(
+            summary: "可能有帮助，可以继续用同样强度观察。",
+            observedFacts: ["完成 4/5 天"],
+            possibleFactors: [],
+            uncertainty: "同期变化不能证明由计划造成。",
+            followUpQuestion: nil,
+            suggestedAction: nil,
+            safetyLevel: .normal,
+            usedMetrics: [.sleepDuration],
+            usedFactKinds: [.microPlan, .healthMetrics]
+        )
+
+        XCTAssertNoThrow(try HealthAIResponseValidator.validate(
+            response,
+            against: factPack,
+            planEvaluation: evaluation
+        ))
+        let unrelated = HealthAIResponse(
+            summary: response.summary,
+            observedFacts: response.observedFacts,
+            possibleFactors: response.possibleFactors,
+            uncertainty: response.uncertainty,
+            followUpQuestion: nil,
+            suggestedAction: nil,
+            safetyLevel: .normal,
+            usedMetrics: [.heartRateVariability],
+            usedFactKinds: [.microPlan, .healthMetrics]
+        )
+        XCTAssertThrowsError(try HealthAIResponseValidator.validate(
+            unrelated,
+            against: factPack,
+            planEvaluation: evaluation
+        ))
     }
 
     func testDeepSeekKeychainStoreSavesReadsAndDeletesWithoutSourceConfiguration() throws {
@@ -226,6 +293,243 @@ final class HealthAIFeatureTests: XCTestCase {
         for sample in samples {
             XCTAssertFalse(encoded.contains(sample.id.uuidString))
         }
+    }
+
+    func testFactPackIncludesLocalTrendAndHighlightedTodayChange() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let referenceDate = try XCTUnwrap(calendar.date(from: DateComponents(
+            year: 2026, month: 9, day: 10, hour: 12
+        )))
+        let source = HealthMetricSource(
+            sourceName: "Test Watch",
+            bundleIdentifier: "test.watch",
+            deviceName: "Test Watch"
+        )
+        let samples = try (0..<35).map { offset in
+            let date = try XCTUnwrap(calendar.date(
+                byAdding: .day, value: -offset, to: referenceDate
+            ))
+            return try HealthMetricSample(
+                id: UUID(),
+                metricType: .stepCount,
+                startDate: date.addingTimeInterval(-60),
+                endDate: date,
+                value: offset < 7 ? 7_000 : 5_000,
+                unit: .count,
+                source: source
+            )
+        }
+
+        let factPack = HealthFactPackBuilder.build(
+            snapshot: HealthDataSnapshot(states: [.stepCount: .available(samples)]),
+            dataMode: .live,
+            referenceDate: referenceDate,
+            calendar: calendar
+        )
+        let stepFact = try XCTUnwrap(factPack.metrics.first {
+            $0.metric == .stepCount
+        })
+
+        XCTAssertEqual(stepFact.trend?.state, .sustainedChange)
+        XCTAssertEqual(stepFact.trend?.direction, .higher)
+        XCTAssertEqual(stepFact.trend?.currentValidDayCount, 7)
+        XCTAssertEqual(stepFact.trend?.baselineValidDayCount, 28)
+        XCTAssertEqual(factPack.highlightedChangeMetric, .stepCount)
+    }
+
+    func testSupplementalFactsIncludeBoundedUserNotesAndCustomEventNames() throws {
+        let zone = TimeZone(secondsFromGMT: 0)!
+        let now = Date(timeIntervalSince1970: 1_788_969_600)
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = zone
+        let today = SubjectiveLocalDay(date: now, timeZone: zone)
+        let checkIn = try DailyCheckIn(
+            localDay: today,
+            energy: .two,
+            stress: .four,
+            bodyFeeling: .three,
+            note: "昨晚照护家人后睡得较晚",
+            recordedAt: now
+        )
+        let event = try ContextEvent(
+            kind: .custom,
+            customLabel: "家庭聚会",
+            startedAt: now,
+            intensity: .high,
+            note: "结束时间比预计晚",
+            createdAt: now
+        )
+        let recentStart = try XCTUnwrap(calendar.date(byAdding: .day, value: -7, to: calendar.startOfDay(for: now)))
+        let recentEnd = calendar.startOfDay(for: now)
+        let recentDay = SubjectiveLocalDay(date: recentStart, timeZone: zone)
+        let recentCheckIn = try DailyCheckIn(
+            localDay: recentDay,
+            energy: .three,
+            stress: .two,
+            bodyFeeling: .four,
+            note: "早上精神尚可",
+            recordedAt: recentStart
+        )
+        let recentEvent = try ContextEvent(
+            kind: .custom,
+            customLabel: "临时搬家",
+            startedAt: recentStart,
+            intensity: .medium,
+            note: "当天活动量较大",
+            createdAt: recentStart
+        )
+        let recentContext = AssistantFactContextSnapshot(
+            window: InsightContextWindow(
+                interval: DateInterval(start: recentStart, end: recentEnd),
+                localDays: (0..<7).compactMap {
+                    calendar.date(byAdding: .day, value: $0, to: recentStart).map {
+                        SubjectiveLocalDay(date: $0, timeZone: zone)
+                    }
+                },
+                timeZoneIdentifier: zone.identifier
+            ),
+            checkIns: [recentCheckIn],
+            contextEvents: [recentEvent]
+        )
+        let scheduledTime = try ScheduledLocalTime(hour: 20, minute: 30)
+        let plan = MicroPlan(
+            draft: MicroPlanDraft(
+                id: CarePlanID(rawValue: "private-plan-id"),
+                title: "睡前呼吸",
+                taskID: CareTaskID(rawValue: "private-task-id"),
+                taskTitle: "完成一次睡前呼吸",
+                startDate: recentEnd,
+                endDateExclusive: try XCTUnwrap(calendar.date(byAdding: .day, value: 5, to: recentEnd)),
+                scheduledTime: scheduledTime,
+                templateID: .bedtimeBreathing
+            ),
+            status: .active
+        )
+        let supplemental = HealthFactSupplementalFactsBuilder.build(
+            dataMode: .live,
+            referenceDate: now,
+            timeZone: zone,
+            todayCheckIn: checkIn,
+            didLoadTodayCheckIn: true,
+            todayContextEvents: [event],
+            didLoadTodayContextEvents: true,
+            recentContextState: .available(recentContext),
+            plan: plan,
+            progress: try MicroPlanProgress(
+                scheduledCount: 3, completedCount: 2, skippedCount: 1
+            ),
+            todayOutcome: .completed,
+            outcomeRecords: [.init(
+                occurrenceIndex: 0,
+                state: .completed,
+                recordedAt: now,
+                feedback: "今天做完更放松"
+            )],
+            didLoadPlan: true
+        )
+        let factPack = HealthFactPackBuilder.empty(
+            dataMode: .live,
+            referenceDate: now,
+            calendar: calendar,
+            supplementalFacts: supplemental
+        )
+        let encoded = String(decoding: try JSONEncoder().encode(factPack), as: UTF8.self)
+
+        XCTAssertEqual(supplemental.todayFeeling.energy, 2)
+        XCTAssertEqual(supplemental.todayFeeling.note, "昨晚照护家人后睡得较晚")
+        XCTAssertEqual(supplemental.recentFeelings.recordedDayCount, 1)
+        XCTAssertEqual(supplemental.recentFeelings.notes.first?.note, "早上精神尚可")
+        XCTAssertEqual(supplemental.todayLifeEvents.events.first?.kind, .custom)
+        XCTAssertEqual(supplemental.todayLifeEvents.details.first?.customName, "家庭聚会")
+        XCTAssertEqual(supplemental.todayLifeEvents.details.first?.note, "结束时间比预计晚")
+        XCTAssertEqual(supplemental.recentLifeEvents.details.first?.customName, "临时搬家")
+        XCTAssertEqual(supplemental.recentLifeEvents.details.first?.note, "当天活动量较大")
+        XCTAssertEqual(supplemental.microPlan.completedCount, 2)
+        XCTAssertEqual(supplemental.microPlan.userFeedback, ["今天做完更放松"])
+        XCTAssertTrue(factPack.availableFactKinds.contains(.todayFeeling))
+        XCTAssertTrue(factPack.availableFactKinds.contains(.microPlan))
+        XCTAssertTrue(encoded.contains("昨晚照护家人后睡得较晚"))
+        XCTAssertTrue(encoded.contains("家庭聚会"))
+        XCTAssertTrue(encoded.contains("结束时间比预计晚"))
+        XCTAssertFalse(encoded.contains("\"startedAt\""))
+        XCTAssertFalse(encoded.contains("\"endedAt\""))
+        XCTAssertFalse(encoded.contains("\"recordID\""))
+        XCTAssertFalse(encoded.contains("\"customLabel\""))
+        XCTAssertFalse(encoded.contains("private-plan-id"))
+        XCTAssertFalse(encoded.contains("private-task-id"))
+
+        let response = HealthAIResponse(
+            summary: "今天的感受、同期事件和计划记录可以一起作为背景。",
+            observedFacts: [],
+            possibleFactors: [],
+            uncertainty: "这些记录只能说明同期情况，不能证明因果。",
+            followUpQuestion: nil,
+            suggestedAction: nil,
+            safetyLevel: .normal,
+            usedMetrics: [],
+            usedFactKinds: [.todayFeeling, .lifeEvents, .microPlan]
+        )
+        XCTAssertNoThrow(try HealthAIResponseValidator.validate(
+            response,
+            against: factPack
+        ))
+    }
+
+    func testSupplementalFactsLimitEventTextDetailsWithoutDroppingEventCounts() throws {
+        let zone = TimeZone(secondsFromGMT: 0)!
+        let now = Date(timeIntervalSince1970: 1_788_969_600)
+        let events = try (0..<21).map { index in
+            try ContextEvent(
+                kind: .overtime,
+                startedAt: now.addingTimeInterval(Double(index)),
+                note: "事件备注 \(index)",
+                createdAt: now
+            )
+        }
+
+        let supplemental = HealthFactSupplementalFactsBuilder.build(
+            dataMode: .live,
+            referenceDate: now,
+            timeZone: zone,
+            todayCheckIn: nil,
+            didLoadTodayCheckIn: true,
+            todayContextEvents: events,
+            didLoadTodayContextEvents: true,
+            recentContextState: nil,
+            plan: nil,
+            progress: nil,
+            todayOutcome: nil,
+            outcomeRecords: [],
+            didLoadPlan: true
+        )
+
+        XCTAssertEqual(supplemental.todayLifeEvents.events.first?.occurrenceCount, 21)
+        XCTAssertEqual(
+            supplemental.todayLifeEvents.details.count,
+            HealthFactSupplementalFactsBuilder.contextEventDetailLimit
+        )
+        XCTAssertEqual(supplemental.todayLifeEvents.details.first?.note, "事件备注 0")
+        XCTAssertEqual(supplemental.todayLifeEvents.details.last?.note, "事件备注 19")
+    }
+
+    func testResponseValidatorRejectsUnavailableSupplementalFactReference() {
+        let response = HealthAIResponse(
+            summary: "引用了不存在的今日感受",
+            observedFacts: [],
+            possibleFactors: [],
+            uncertainty: "没有对应记录",
+            followUpQuestion: nil,
+            suggestedAction: nil,
+            safetyLevel: .normal,
+            usedMetrics: [],
+            usedFactKinds: [.todayFeeling]
+        )
+
+        XCTAssertThrowsError(try HealthAIResponseValidator.validate(
+            response,
+            against: emptyFactPack()
+        ))
     }
 
     func testSafetyRulesInterceptUrgentMedicationAndPromptInjectionRequests() {

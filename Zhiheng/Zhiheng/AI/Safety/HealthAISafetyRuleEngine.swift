@@ -114,15 +114,32 @@ enum HealthAISafetyRuleEngine {
 enum HealthAIResponseValidator {
     static func validate(
         _ response: HealthAIResponse,
-        against factPack: HealthFactPack
+        against factPack: HealthFactPack,
+        planEvaluation: MicroPlanEvaluationFactPack? = nil
     ) throws -> HealthAIResponse {
+        let usedFactKinds = response.usedFactKinds
+            ?? (response.usedMetrics.isEmpty ? [] : [.healthMetrics])
+        let evaluationMetrics = Set(
+            planEvaluation?.metrics.compactMap(\.healthMetric) ?? []
+        )
+        let allowedMetrics = factPack.availableMetricTypes.union(evaluationMetrics)
+        var allowedFactKinds = factPack.availableFactKinds
+        if planEvaluation != nil {
+            allowedFactKinds.insert(.microPlan)
+            if !evaluationMetrics.isEmpty {
+                allowedFactKinds.insert(.healthMetrics)
+            }
+        }
         guard !response.summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               !response.uncertainty.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               response.followUpQuestion.map({ !$0.isEmpty }) ?? true,
               response.observedFacts.count <= 6,
               response.possibleFactors.count <= 5,
               response.usedMetrics.count == Set(response.usedMetrics).count,
-              Set(response.usedMetrics).isSubset(of: factPack.availableMetricTypes)
+              Set(response.usedMetrics).isSubset(of: allowedMetrics),
+              usedFactKinds.count == Set(usedFactKinds).count,
+              Set(usedFactKinds).isSubset(of: allowedFactKinds),
+              response.usedMetrics.isEmpty || usedFactKinds.contains(.healthMetrics)
         else {
             throw HealthAIServiceError.invalidResponse
         }
@@ -169,7 +186,8 @@ enum HealthAILocalFallbackBuilder {
             followUpQuestion: nil,
             suggestedAction: nil,
             safetyLevel: .normal,
-            usedMetrics: Array(usable.prefix(3).map(\.metric))
+            usedMetrics: Array(usable.prefix(3).map(\.metric)),
+            usedFactKinds: usable.isEmpty ? [] : [.healthMetrics]
         )
     }
 

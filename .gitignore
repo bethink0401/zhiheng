@@ -17,6 +17,7 @@ __pycache__/
 # Generated exports and visual QA renders
 output/
 竞赛材料/artifacts/
+tmp/
 
 # Local secrets and environment overrides
 .env

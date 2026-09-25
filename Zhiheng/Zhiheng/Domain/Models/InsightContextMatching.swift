@@ -97,9 +97,6 @@ enum InsightContextMatcher {
         checkIns: [DailyCheckIn],
         contextEvents: [ContextEvent]
     ) throws -> InsightContextMatch {
-        guard factSet.dataMode == .live else {
-            throw InsightContextMatchingError.unsupportedDataMode
-        }
         let window = try window(for: factSet)
         let dayOrder = Dictionary(uniqueKeysWithValues:
             window.localDays.enumerated().map { ($0.element, $0.offset) }

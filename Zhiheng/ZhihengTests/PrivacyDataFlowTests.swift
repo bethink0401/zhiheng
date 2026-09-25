@@ -11,7 +11,7 @@ final class PrivacyDataFlowTests: XCTestCase {
     }
 
     func testCatalogHasVersionedStableRouteOrderAndUniqueStepIDs() {
-        XCTAssertEqual(PrivacyDataFlowCatalog.version, "s14-privacy-data-flow-v1")
+        XCTAssertEqual(PrivacyDataFlowCatalog.version, "s14-privacy-data-flow-v3")
         XCTAssertEqual(routes.map(\.id), [
             "health-analysis",
             "local-records",
@@ -55,18 +55,27 @@ final class PrivacyDataFlowTests: XCTestCase {
         XCTAssertTrue(ai.steps.contains { ($0.title + $0.detail).contains("HTTPS") })
         XCTAssertTrue(shared.contains("本次问题"))
         XCTAssertTrue(shared.contains("最多 10 条"))
-        XCTAssertTrue(shared.contains("聚合健康事实"))
+        XCTAssertTrue(shared.contains("聚合健康趋势"))
+        XCTAssertTrue(shared.contains("签到备注"))
+        XCTAssertTrue(shared.contains("事件备注"))
+        XCTAssertTrue(shared.contains("自定义名称"))
+        XCTAssertTrue(shared.contains("敏感信息"))
+        XCTAssertTrue(shared.contains("微计划的状态、完成情况"))
     }
 
-    func testAIFlowExplicitlyExcludesRawSamplesIdentityAndContextFreeText() throws {
-        let excluded = try route("ai-conversation").excludedData.joined()
+    func testAIFlowIncludesChosenContextTextButExcludesRawSamplesAndRecordIDs() throws {
+        let ai = try route("ai-conversation")
+        let shared = ai.sharedData.joined()
+        let excluded = ai.excludedData.joined()
 
         XCTAssertTrue(excluded.contains("原始 HealthKit 样本数组"))
-        XCTAssertTrue(excluded.contains("真实姓名"))
-        XCTAssertTrue(excluded.contains("联系方式"))
+        XCTAssertTrue(excluded.contains("账号身份"))
+        XCTAssertTrue(excluded.contains("定位信息"))
         XCTAssertTrue(excluded.contains("底层记录 ID"))
-        XCTAssertTrue(excluded.contains("生活事件备注"))
-        XCTAssertTrue(excluded.contains("自定义名称"))
+        XCTAssertTrue(excluded.contains("精确开始与结束时间"))
+        XCTAssertTrue(shared.contains("签到备注"))
+        XCTAssertTrue(shared.contains("事件备注"))
+        XCTAssertTrue(shared.contains("自定义名称"))
     }
 
     func testNotificationsAreLocalAndExposeOnlyTheNeutralPreview() throws {

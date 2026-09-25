@@ -57,7 +57,7 @@ struct PrivacyUserControl: Identifiable, Equatable, Sendable {
 }
 
 enum PrivacyDataFlowCatalog {
-    static let version = "s14-privacy-data-flow-v1"
+    static let version = "s14-privacy-data-flow-v3"
 
     static let headline = "你的数据先在 iPhone 上处理"
     static let introduction =
@@ -140,7 +140,7 @@ enum PrivacyDataFlowCatalog {
                 )
             ],
             sharedData: [],
-            excludedData: ["默认不上传签到备注、自定义事件名称、CareKit 反馈或底层记录 ID"]
+            excludedData: ["本地洞察、通知和 PDF 不读取签到备注、事件备注或自定义名称；底层记录 ID 不进入 AI 事实包"]
         ),
         PrivacyDataFlowRoute(
             id: "ai-conversation",
@@ -159,7 +159,7 @@ enum PrivacyDataFlowCatalog {
                 .init(
                     id: "ai-fact-pack",
                     title: "本机构建最小事实包",
-                    detail: "只整理回答所需的当前值、时间范围、数据质量与个人基线等聚合事实。",
+                    detail: "整理本地趋势、今日与近 7 天感受和生活事件（含你填写的备注与自定义名称），以及当前或最近微计划的执行与反馈。",
                     systemImage: "shippingbox.fill",
                     boundary: .onDevice
                 ),
@@ -180,13 +180,17 @@ enum PrivacyDataFlowCatalog {
             ],
             sharedData: [
                 "本次问题和最近最多 10 条对话消息",
-                "回答所需的聚合健康事实与数据不足状态",
-                "主动请求计划 AI 解读时的聚合评估和受限反馈"
+                "聚合健康趋势与数据质量",
+                "今日与近 7 天感受评分及签到备注",
+                "今日与近 7 天生活事件汇总、事件备注及自定义名称",
+                "当前或最近微计划的状态、完成情况和最多 7 条受限反馈",
+                "主动请求计划 AI 解读时的聚合评估",
+                "备注与自定义名称按原文发送，可能包含你自行写入的个人或敏感信息"
             ],
             excludedData: [
                 "原始 HealthKit 样本数组",
-                "真实姓名、联系方式、精确地址和底层记录 ID",
-                "生活事件备注与自定义名称"
+                "应用不会另行添加账号身份、通讯录、定位信息或底层记录 ID",
+                "生活事件的精确开始与结束时间"
             ]
         ),
         PrivacyDataFlowRoute(

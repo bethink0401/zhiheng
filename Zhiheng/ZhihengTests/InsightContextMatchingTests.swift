@@ -280,6 +280,34 @@ final class InsightContextMatchingTests: XCTestCase {
     }
 
     @MainActor
+    func testAssistantLoaderPreservesUserTextOnlyForExplicitFactPackBuilding() throws {
+        let facts = factSet()
+        let checkIn = try checkIn(
+            dayOffset: 3,
+            note: "合成签到备注"
+        )
+        let event = try ContextEvent(
+            kind: .custom,
+            customLabel: "合成自定义名称",
+            startedAt: localDate(day: 2, hour: 10),
+            note: "合成事件备注",
+            createdAt: localDate(day: 2, hour: 10)
+        )
+        let store = InsightContextStoreSpy(checkIns: [checkIn], events: [event])
+
+        let state = AssistantFactContextLoader(store: store).load(for: facts)
+
+        guard case let .available(result) = state else {
+            return XCTFail("Expected assistant context")
+        }
+        XCTAssertEqual(result.checkIns.first?.note, "合成签到备注")
+        XCTAssertEqual(result.contextEvents.first?.customLabel, "合成自定义名称")
+        XCTAssertEqual(result.contextEvents.first?.note, "合成事件备注")
+        XCTAssertEqual(store.checkInReadCount, 7)
+        XCTAssertEqual(store.eventReadCount, 1)
+    }
+
+    @MainActor
     func testEmptyLiveStoreIsAvailableRatherThanAReadFailure() {
         let store = InsightContextStoreSpy()
         let state = InsightContextLoader(store: store).load(for: factSet())
@@ -301,15 +329,18 @@ final class InsightContextMatchingTests: XCTestCase {
             InsightContextLoader(store: store).load(for: demoFacts),
             .demoMode
         )
+        XCTAssertEqual(
+            AssistantFactContextLoader(store: store).load(for: demoFacts),
+            .demoMode
+        )
         XCTAssertEqual(store.checkInReadCount, 0)
         XCTAssertEqual(store.eventReadCount, 0)
-        XCTAssertThrowsError(try InsightContextMatcher.match(
+        let demoMatch = try InsightContextMatcher.match(
             factSet: demoFacts,
             checkIns: [record],
             contextEvents: []
-        )) {
-            XCTAssertEqual($0 as? InsightContextMatchingError, .unsupportedDataMode)
-        }
+        )
+        XCTAssertEqual(demoMatch.dataMode, .demo)
     }
 
     @MainActor

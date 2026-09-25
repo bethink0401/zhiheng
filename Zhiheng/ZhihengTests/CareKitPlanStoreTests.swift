@@ -5,6 +5,71 @@ import XCTest
 
 final class CareKitPlanStoreTests: XCTestCase {
     @MainActor
+    func testDemoSessionProvidesCompleteRecentPlanEvaluationAndHistory() async throws {
+        let session = MicroPlanSession(
+            service: CareKitPlanStore(inMemoryStoreNamed: UUID().uuidString)
+        )
+
+        await session.refresh(dataMode: .demo)
+
+        XCTAssertEqual(session.displayedPlan?.status, .completed)
+        XCTAssertEqual(session.progress?.scheduledCount, 5)
+        XCTAssertEqual(session.progress?.completedCount, 4)
+        XCTAssertEqual(session.outcomeRecords.count, 5)
+        XCTAssertEqual(session.outcomeRecords.compactMap(\.feedback).count, 4)
+        XCTAssertEqual(session.history.count, 3)
+        XCTAssertEqual(session.baselineSnapshot?.dataMode, .demo)
+        XCTAssertEqual(session.evaluationContext.status, .recorded)
+        XCTAssertTrue(session.hasLoadedStateForCurrentMode)
+    }
+
+    @MainActor
+    func testDemoPlanCanRequestDeepEvaluationWithOnlyEvaluationWhitelist() async throws {
+        let aiService = PlanEvaluationAIServiceStub(response: HealthAIResponse(
+            summary: "数据不足，建议继续观察；这次完成度较好，但不把同期变化写成计划造成的结果。",
+            observedFacts: ["计划完成 4/5 天"],
+            possibleFactors: [],
+            uncertainty: "单次计划只能形成初步观察。",
+            followUpQuestion: nil,
+            suggestedAction: nil,
+            safetyLevel: .normal,
+            usedMetrics: [],
+            usedFactKinds: [.microPlan],
+            supportiveClosing: "可以按同样强度继续观察，也可以先停下来。"
+        ))
+        let session = MicroPlanSession(
+            service: CareKitPlanStore(inMemoryStoreNamed: UUID().uuidString),
+            evaluationService: aiService
+        )
+        let referenceDate = Date(timeIntervalSince1970: 1_800_000_000)
+        await session.refresh(referenceDate: referenceDate, dataMode: .demo)
+        let plan = try XCTUnwrap(session.displayedPlan)
+        let progress = try XCTUnwrap(session.progress)
+        let evaluation = MicroPlanEvaluationFactory.make(
+            plan: plan,
+            progress: progress,
+            outcomes: session.outcomeRecords,
+            trends: [],
+            context: session.evaluationContext
+        )
+
+        await session.generateAIEvaluation(
+            for: plan,
+            evaluation: evaluation,
+            snapshot: nil,
+            dataMode: .demo,
+            referenceDate: referenceDate
+        )
+
+        XCTAssertNotNil(session.aiEvaluation)
+        XCTAssertFalse(session.showsError)
+        let request = await aiService.lastRequest()
+        XCTAssertEqual(request?.factPack.dataMode, .demo)
+        XCTAssertTrue(request?.factPack.metrics.isEmpty == true)
+        XCTAssertEqual(request?.planEvaluation, evaluation.factPack)
+    }
+
+    @MainActor
     func testAIPlanCandidateStartsRecordsTodayAndEndsThroughSharedSession() async throws {
         let service = CareKitPlanStore(inMemoryStoreNamed: UUID().uuidString)
         let baselineStore = InMemoryPlanBaselineStore()
@@ -133,9 +198,31 @@ final class CareKitPlanStoreTests: XCTestCase {
             dataMode: .demo
         )
 
-        XCTAssertTrue(didStart)
-        XCTAssertEqual(session.evaluationContext, .demoMode)
+        XCTAssertFalse(didStart)
+        XCTAssertNil(session.activePlan)
+        XCTAssertTrue(session.showsError)
+        XCTAssertEqual(session.message, "演示计划是只读样例，不会写入你的 CareKit 记录。")
         XCTAssertEqual(subjectiveStore.contextReadCount, 0)
+    }
+
+    @MainActor
+    func testDemoRefreshLoadsCompletedReadOnlyPlanWithEvaluationFacts() async throws {
+        let service = CareKitPlanStore(inMemoryStoreNamed: UUID().uuidString)
+        let session = MicroPlanSession(service: service)
+        let referenceDate = Date(timeIntervalSince1970: 1_789_344_000)
+
+        await session.refresh(referenceDate: referenceDate, dataMode: .demo)
+
+        XCTAssertTrue(session.isDemoState)
+        XCTAssertEqual(session.displayedPlan?.draft.templateID, .earlierBedtime)
+        XCTAssertEqual(session.displayedPlan?.status, .completed)
+        XCTAssertEqual(session.progress?.scheduledCount, 5)
+        XCTAssertEqual(session.progress?.completedCount, 4)
+        XCTAssertEqual(session.progress?.skippedCount, 1)
+        XCTAssertEqual(session.outcomeRecords.count, 5)
+        XCTAssertEqual(session.evaluationContext.status, .recorded)
+        XCTAssertEqual(session.history.count, 3)
+        XCTAssertEqual(session.baselineSnapshot?.dataMode, .demo)
     }
 
     @MainActor
@@ -706,6 +793,22 @@ final class CareKitPlanStoreTests: XCTestCase {
             scheduledTime: try ScheduledLocalTime(hour: 22, minute: 30)
         )
     }
+}
+
+private actor PlanEvaluationAIServiceStub: AIService {
+    private let response: HealthAIResponse
+    private var request: HealthAIRequest?
+
+    init(response: HealthAIResponse) {
+        self.response = response
+    }
+
+    func respond(to request: HealthAIRequest) async throws -> HealthAIResponse {
+        self.request = request
+        return response
+    }
+
+    func lastRequest() -> HealthAIRequest? { request }
 }
 
 @MainActor

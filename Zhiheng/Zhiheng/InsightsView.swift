@@ -20,11 +20,14 @@ struct InsightsView: View {
     @State private var dashboardPresentation: InsightsDashboardPresentation?
     @State private var displayedDashboardRequest: InsightsDashboardRequest?
     @State private var didPrepareView = false
+    @State private var didRunShowcase = false
 
     init(healthSession: HealthDataSession) {
         self.healthSession = healthSession
 #if DEBUG
-        if ProcessInfo.processInfo.arguments.contains("--insights-section=expanded") {
+        if ProcessInfo.processInfo.arguments.contains("--demo-showcase-recording") {
+            debugSectionFromArguments = "insightsMetric-heartRateVariability"
+        } else if ProcessInfo.processInfo.arguments.contains("--insights-section=expanded") {
             debugSectionFromArguments = "insightsMetric-walkingRunningDistance"
         } else if ProcessInfo.processInfo.arguments.contains("--insights-section=body") {
             debugSectionFromArguments = "insightsBody"
@@ -63,7 +66,6 @@ struct InsightsView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     insightsHeader
-                    if dataMode == .demo { demoModeBanner }
                     if let dashboard {
                         hrvOverview(dashboard)
                         bodyMetrics(dashboard)
@@ -106,6 +108,22 @@ struct InsightsView: View {
             .onChange(of: layout) { _, newValue in
                 storedLayout = (try? JSONEncoder().encode(newValue)) ?? Data()
             }
+#if DEBUG
+            .onAppear {
+                guard !didRunShowcase, ProcessInfo.processInfo.arguments.contains("--demo-showcase-recording") else { return }
+                didRunShowcase = true
+                Task { @MainActor in
+                    try? await Task.sleep(for: .seconds(5))
+                    showsTrendDetails = true
+                    try? await Task.sleep(for: .seconds(8))
+                    showsTrendDetails = false
+                    try? await Task.sleep(for: .seconds(2))
+                    withAnimation(.easeInOut(duration: 0.8)) {
+                        debugScrollTarget = "insightsBody"
+                    }
+                }
+            }
+#endif
         }
         .sheet(isPresented: $showsHRVInfo) {
             HRVReferenceExplanationView()
@@ -312,15 +330,6 @@ struct InsightsView: View {
         .overlay(alignment: .top) { Divider() }
     }
 
-    private var demoModeBanner: some View {
-        Label("演示数据 · 不是你的真实健康记录", systemImage: "theatermasks")
-            .font(.footnote.weight(.semibold))
-            .foregroundStyle(.orange)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(12)
-            .background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 16))
-    }
-
     private func heroColor(_ presentation: InsightsHRVPresentation) -> Color {
         switch presentation {
         case let .available(_, _, level, _, _):
@@ -402,7 +411,6 @@ private struct InsightFourLayerCard: View {
                     HStack {
                         headerIcon
                         Spacer()
-                        demoBadge
                     }
                     headerText
                 }
@@ -411,7 +419,6 @@ private struct InsightFourLayerCard: View {
                     headerIcon
                     headerText
                     Spacer(minLength: 0)
-                    demoBadge
                 }
             }
 
@@ -494,17 +501,6 @@ private struct InsightFourLayerCard: View {
                 }
     }
 
-    @ViewBuilder
-    private var demoBadge: some View {
-        if presentation.isDemo {
-            Text("演示")
-                .font(.caption.weight(.bold))
-                .foregroundStyle(.orange)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 5)
-                .background(.orange.opacity(0.12), in: Capsule())
-        }
-    }
 }
 
 private struct InsightInteractionControls: View {

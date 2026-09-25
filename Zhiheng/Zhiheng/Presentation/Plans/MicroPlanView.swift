@@ -164,6 +164,10 @@ final class MicroPlanSession: ObservableObject {
     private var loadedStateDataMode: HealthDataMode?
 
     var displayedPlan: MicroPlan? { activePlan ?? mostRecentPlan }
+    var isDemoState: Bool { currentDataMode == .demo }
+    var hasLoadedStateForCurrentMode: Bool {
+        loadedStateDataMode == currentDataMode
+    }
 
     init(
         service: any CarePlanService,
@@ -188,6 +192,11 @@ final class MicroPlanSession: ObservableObject {
         currentDataMode = dataMode
         isBusy = true
         defer { isBusy = false }
+        if dataMode == .demo {
+            loadDemoState(referenceDate: referenceDate)
+            loadedStateDataMode = .demo
+            return
+        }
         do {
             try await loadState(referenceDate: referenceDate)
             loadedStateDataMode = dataMode
@@ -200,6 +209,13 @@ final class MicroPlanSession: ObservableObject {
         referenceDate: Date = Date(),
         dataMode: HealthDataMode = .live
     ) async {
+        // A mode switch can rebuild this tab while the previous mode is still
+        // finishing its store read. Wait for that bounded operation to publish
+        // before deciding whether the requested mode still needs a refresh.
+        while isBusy {
+            guard !Task.isCancelled else { return }
+            try? await Task.sleep(for: .milliseconds(25))
+        }
         guard loadedStateDataMode != dataMode else { return }
         await refresh(referenceDate: referenceDate, dataMode: dataMode)
     }
@@ -213,10 +229,12 @@ final class MicroPlanSession: ObservableObject {
         let refreshID = UUID()
         effectiveMethodsRefreshID = refreshID
         guard dataMode == .live else {
-            allEffectiveMethodCards = []
+            allEffectiveMethodCards = DemoEffectiveMethodFactory.cards(
+                endingAt: referenceDate
+            )
             hiddenEffectiveMethods = []
             hiddenEffectiveMethodTemplateIDs = []
-            effectiveMethodsState = .demoMode
+            effectiveMethodsState = .loaded(allEffectiveMethodCards)
             effectiveMethodRestartAvailability = .demoMode
             return
         }
@@ -342,6 +360,12 @@ final class MicroPlanSession: ObservableObject {
         referenceDate: Date = Date()
     ) async -> Bool {
         guard !isBusy else { return false }
+        guard dataMode == .live else {
+            currentDataMode = .demo
+            showsError = true
+            message = "演示计划是只读样例，不会写入你的 CareKit 记录。"
+            return false
+        }
         currentDataMode = dataMode
         isBusy = true
         defer { isBusy = false }
@@ -443,7 +467,7 @@ final class MicroPlanSession: ObservableObject {
     func generateAIEvaluation(
         for plan: MicroPlan,
         evaluation: MicroPlanEvaluationPresentation,
-        snapshot: HealthDataSnapshot?,
+        snapshot _: HealthDataSnapshot?,
         dataMode: HealthDataMode,
         referenceDate: Date = Date()
     ) async {
@@ -452,15 +476,16 @@ final class MicroPlanSession: ObservableObject {
         isEvaluating = true
         defer { isEvaluating = false }
         do {
-            let healthFacts = snapshot.map {
-                HealthFactPackBuilder.build(
-                    snapshot: $0,
-                    dataMode: dataMode,
-                    referenceDate: referenceDate
-                )
-            } ?? HealthFactPackBuilder.empty(
+            // Plan evaluation has its own smaller whitelist. Keeping the
+            // ordinary assistant fact pack out prevents unrelated metrics
+            // from entering the answer and being rejected by the client.
+            let healthFacts = HealthFactPack(
+                generatedAt: referenceDate,
+                rangeStart: referenceDate,
+                rangeEnd: referenceDate,
                 dataMode: dataMode,
-                referenceDate: referenceDate
+                metrics: [],
+                unavailableMetrics: []
             )
             let response = try await evaluationService.respond(to: HealthAIRequest(
                 question: "请评估这次微计划是否值得继续，只解释结构化计划评估事实。",
@@ -522,6 +547,11 @@ final class MicroPlanSession: ObservableObject {
 
     func delete(_ plan: MicroPlan, referenceDate: Date = Date()) async {
         guard !isBusy else { return }
+        guard currentDataMode == .live else {
+            showsError = true
+            message = "演示历史是只读样例，不会修改你的真实计划。"
+            return
+        }
         isBusy = true
         defer { isBusy = false }
         do {
@@ -605,6 +635,123 @@ final class MicroPlanSession: ObservableObject {
         let todayRecord = outcomeRecords.first { $0.occurrenceIndex == index }
         todayOutcomeState = todayRecord?.state
         todayFeedback = todayRecord?.feedback
+    }
+
+    private func loadDemoState(
+        referenceDate: Date,
+        calendar: Calendar = .current
+    ) {
+        guard let template = MicroPlanTemplateLibrary.template(for: .earlierBedtime),
+              let start = calendar.date(byAdding: .day, value: -16, to: referenceDate),
+              let draft = try? template.makeDraft(
+                referenceDate: start,
+                calendar: calendar,
+                uniqueID: UUID(uuidString: "20000000-0000-4000-8000-000000000016")!
+              ),
+              let loadedProgress = try? MicroPlanProgress(
+                scheduledCount: 5,
+                completedCount: 4,
+                skippedCount: 1
+              ) else {
+            activePlan = nil
+            mostRecentPlan = nil
+            progress = nil
+            outcomeRecords = []
+            history = []
+            return
+        }
+        let plan = MicroPlan(draft: draft, status: .completed)
+        let feedback = [
+            "比平时早放下手机，入睡前没那么匆忙。",
+            "第二天起床时精神稍好。",
+            "当天有截止任务，仍按时间开始准备。",
+            "更容易收尾，第二天精力感受更好。",
+            nil,
+        ]
+        let records = (0..<5).compactMap { index -> PlanOutcomeRecord? in
+            guard let day = calendar.date(byAdding: .day, value: index, to: draft.startDate),
+                  let recordedAt = calendar.date(
+                    bySettingHour: 22,
+                    minute: 35,
+                    second: 0,
+                    of: day
+                  ) else { return nil }
+            let state: PlanOutcomeState = index == 4 ? .skipped : .completed
+            return PlanOutcomeRecord(
+                occurrenceIndex: index,
+                state: state,
+                recordedAt: recordedAt,
+                feedback: feedback[index]
+            )
+        }
+        activePlan = nil
+        mostRecentPlan = plan
+        progress = loadedProgress
+        outcomeRecords = records
+        todayOutcomeState = nil
+        todayFeedback = nil
+        baselineSnapshot = MicroPlanBaselineSnapshot(
+            carePlanID: draft.id,
+            planStartDate: draft.startDate,
+            capturedAt: draft.startDate,
+            dataMode: .demo,
+            metrics: [
+                .init(metric: .sleepOnset, median: 23.92, validDayCount: 5),
+                .init(metric: .sleepDuration, median: 7.12, validDayCount: 5)
+            ],
+            schemaVersion: MicroPlanBaselineSnapshot.currentSchemaVersion
+        )
+        evaluationContext = MicroPlanEvaluationContext(
+            status: .recorded,
+            events: [
+                .init(kind: .caffeine, occurrenceCount: 1, highestIntensity: .medium),
+                .init(kind: .highIntensityExercise, occurrenceCount: 1, highestIntensity: .medium)
+            ]
+        )
+        history = [MicroPlanHistoryEntry(plan: plan, progress: loadedProgress)]
+            + demoHistoricalEntries(referenceDate: referenceDate, calendar: calendar)
+        aiEvaluation = nil
+        evaluatedPlanID = nil
+        showsError = false
+        message = nil
+    }
+
+    private func demoHistoricalEntries(
+        referenceDate: Date,
+        calendar: Calendar
+    ) -> [MicroPlanHistoryEntry] {
+        let configurations: [(
+            templateID: MicroPlanTemplateID,
+            dayOffset: Int,
+            completed: Int,
+            skipped: Int,
+            id: UUID
+        )] = [
+            (.afternoonWalk, -39, 3, 2, UUID(uuidString: "20000000-0000-4000-8000-000000000039")!),
+            (.bedtimeBreathing, -67, 5, 0, UUID(uuidString: "20000000-0000-4000-8000-000000000067")!),
+        ]
+        return configurations.compactMap { item in
+            guard let template = MicroPlanTemplateLibrary.template(for: item.templateID),
+                  let start = calendar.date(
+                      byAdding: .day,
+                      value: item.dayOffset,
+                      to: referenceDate
+                  ),
+                  let draft = try? template.makeDraft(
+                      referenceDate: start,
+                      calendar: calendar,
+                      uniqueID: item.id
+                  ),
+                  let progress = try? MicroPlanProgress(
+                      scheduledCount: item.completed + item.skipped,
+                      completedCount: item.completed,
+                      skippedCount: item.skipped
+                  ) else { return nil }
+            return MicroPlanHistoryEntry(
+                plan: MicroPlan(draft: draft, status: .completed),
+                progress: progress
+            )
+        }
     }
 
     private func createPlan(
@@ -903,7 +1050,16 @@ struct MicroPlanView: View {
             .task(id: healthSession.dataMode) {
                 await session.refreshIfNeeded(dataMode: healthSession.dataMode)
 #if DEBUG
-                if ProcessInfo.processInfo.arguments.contains("--plans-trends-preview") {
+                if ProcessInfo.processInfo.arguments.contains("--demo-showcase-recording") {
+                    try? await Task.sleep(for: .seconds(7))
+                    withAnimation(.easeInOut(duration: 0.8)) {
+                        debugScrollTarget = "planEvaluation"
+                    }
+                    try? await Task.sleep(for: .seconds(12))
+                    withAnimation(.easeInOut(duration: 0.8)) {
+                        debugScrollTarget = "planTrends"
+                    }
+                } else if ProcessInfo.processInfo.arguments.contains("--plans-trends-preview") {
                     try? await Task.sleep(for: .milliseconds(350))
                     debugScrollTarget = "planTrends"
                 } else if ProcessInfo.processInfo.arguments.contains(
@@ -1090,12 +1246,6 @@ struct MicroPlanView: View {
             VStack(alignment: .leading, spacing: 5) {
                 Text("计划期间的变化")
                     .font(.title2.weight(.bold))
-            }
-
-            if healthSession.dataMode == .demo {
-                Label("当前趋势使用演示数据", systemImage: "theatermasks")
-                    .font(.footnote.weight(.medium))
-                    .foregroundStyle(.orange)
             }
 
             if isLoading {
@@ -2160,19 +2310,20 @@ private struct MicroPlanHistoryView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-            Divider()
-
-            Button(role: .destructive) {
-                planPendingDeletion = entry.plan
-                confirmsDeletion = true
-            } label: {
-                Label("删除计划记录", systemImage: "trash")
-                    .font(.subheadline.weight(.semibold))
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            if !session.isDemoState {
+                Divider()
+                Button(role: .destructive) {
+                    planPendingDeletion = entry.plan
+                    confirmsDeletion = true
+                } label: {
+                    Label("删除计划记录", systemImage: "trash")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(.plain)
+                .disabled(session.isBusy)
+                .accessibilityHint("删除计划、打卡、反馈和关联评估基线")
             }
-            .buttonStyle(.plain)
-            .disabled(session.isBusy)
-            .accessibilityHint("删除计划、打卡、反馈和关联评估基线")
         }
         .padding(16)
         .background(

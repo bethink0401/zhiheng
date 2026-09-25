@@ -38,6 +38,7 @@ struct RootTabView: View {
     @StateObject private var demoHealthSession: HealthDataSession
     @StateObject private var microPlanSession: MicroPlanSession
     @StateObject private var checkInCoordinator: DailyCheckInCoordinator
+    @StateObject private var demoCheckInCoordinator: DailyCheckInCoordinator
     @StateObject private var notificationAuthorizationSession: NotificationAuthorizationSession
     @StateObject private var dailyCheckInReminderSession: DailyCheckInReminderSession
     @StateObject private var microPlanReminderSession: MicroPlanReminderSession
@@ -45,6 +46,7 @@ struct RootTabView: View {
     @StateObject private var notificationDeliverySettingsSession:
         NotificationDeliverySettingsSession
     private let insightContextLoader: InsightContextLoader
+    private let assistantFactContextLoader: AssistantFactContextLoader
     private let insightInteractionStore: any InsightInteractionStore
     private let isDemoAvailable: Bool
 
@@ -90,7 +92,8 @@ struct RootTabView: View {
         )
         let planStoreName: String
 #if DEBUG
-        if ProcessInfo.processInfo.arguments.contains("--plans-evaluation-preview") {
+        if ProcessInfo.processInfo.arguments.contains("--plans-evaluation-preview")
+            || ProcessInfo.processInfo.arguments.contains("--demo-showcase-recording") {
             planStoreName = "ZhihengCarePlansEvaluationPreview"
         } else if ProcessInfo.processInfo.arguments.contains("--plans-feedback-preview") {
             planStoreName = "ZhihengCarePlansFeedbackPreview"
@@ -106,6 +109,9 @@ struct RootTabView: View {
         } catch {
             subjectiveRecordStore = UnavailableSubjectiveRecordStore()
         }
+        let demoSubjectiveRecordStore = DemoSubjectiveRecordStore(
+            endingAt: referenceDate
+        )
         let baselineStore: any PlanBaselineStore
         do {
             baselineStore = try SwiftDataPlanBaselineStore()
@@ -170,6 +176,11 @@ struct RootTabView: View {
             }
         }
         _checkInCoordinator = StateObject(wrappedValue: checkInCoordinator)
+        _demoCheckInCoordinator = StateObject(wrappedValue: DailyCheckInCoordinator(
+            store: demoSubjectiveRecordStore,
+            referenceDate: referenceDate,
+            allowsDemoRecords: true
+        ))
         _notificationAuthorizationSession = StateObject(
             wrappedValue: notificationAuthorizationSession
         )
@@ -185,7 +196,14 @@ struct RootTabView: View {
         _notificationDeliverySettingsSession = StateObject(
             wrappedValue: notificationDeliverySettingsSession
         )
-        insightContextLoader = InsightContextLoader(store: subjectiveRecordStore)
+        insightContextLoader = InsightContextLoader(
+            store: subjectiveRecordStore,
+            demoStore: demoSubjectiveRecordStore
+        )
+        assistantFactContextLoader = AssistantFactContextLoader(
+            store: subjectiveRecordStore,
+            demoStore: demoSubjectiveRecordStore
+        )
         self.insightInteractionStore = insightInteractionStore
         isDemoAvailable = demoService != nil
     }
@@ -209,11 +227,20 @@ struct RootTabView: View {
             }
         }
         .tint(.teal)
-        .sheet(isPresented: $checkInCoordinator.isPresented) {
-            DailyFeelingSheet(coordinator: checkInCoordinator)
+        .sheet(
+            isPresented: healthDataMode == .demo
+                ? $demoCheckInCoordinator.isPresented
+                : $checkInCoordinator.isPresented
+        ) {
+            DailyFeelingSheet(
+                coordinator: healthDataMode == .demo
+                    ? demoCheckInCoordinator
+                    : checkInCoordinator
+            )
         }
         .task(id: healthDataMode) {
             checkInCoordinator.enterApp(dataMode: healthDataMode)
+            demoCheckInCoordinator.enterApp(dataMode: .demo)
             await notificationAuthorizationSession.refresh()
             await activeHealthSession.refreshOnceForCurrentAppEntry()
             await synchronizeReminders()
@@ -228,6 +255,8 @@ struct RootTabView: View {
             )
             let seedsEvaluationPreview = ProcessInfo.processInfo.arguments.contains(
                 "--plans-evaluation-preview"
+            ) || ProcessInfo.processInfo.arguments.contains(
+                "--demo-showcase-recording"
             )
             if seedsProgressPreview || seedsActionsPreview || seedsEvaluationPreview {
                 for _ in 0..<20 where microPlanSession.isBusy {
@@ -278,6 +307,50 @@ struct RootTabView: View {
                     await microPlanSession.refresh(dataMode: activeHealthSession.dataMode)
                 }
             }
+            if ProcessInfo.processInfo.arguments.contains("--demo-showcase-recording") {
+                Task { @MainActor in
+                    // 阶段 1：【今日主页与主观打卡】(0s ~ 30s)
+                    selection = .today
+                    try? await Task.sleep(for: .seconds(4))
+                    demoCheckInCoordinator.session.energy = .two
+                    demoCheckInCoordinator.session.stress = .four
+                    demoCheckInCoordinator.session.bodyFeeling = .three
+                    demoCheckInCoordinator.session.note = "最近几天连续赶项目，下午感到精力透支"
+                    demoCheckInCoordinator.isPresented = true
+                    try? await Task.sleep(for: .seconds(9))
+                    demoCheckInCoordinator.dismiss()
+                    try? await Task.sleep(for: .seconds(17))
+
+                    // 阶段 2：【洞察页：HRV四层卡片与依据来源】(30s ~ 58s)
+                    withAnimation(.easeInOut(duration: 0.35)) {
+                        selection = .insights
+                    }
+                    try? await Task.sleep(for: .seconds(28))
+
+                    // 阶段 3：【AI助手：智能体推理、追问与微计划】(58s ~ 118s)
+                    withAnimation(.easeInOut(duration: 0.35)) {
+                        selection = .assistant
+                    }
+                    try? await Task.sleep(for: .seconds(60))
+
+                    // 阶段 4：【微计划：CareKit任务打卡与评估复盘】(118s ~ 148s)
+                    withAnimation(.easeInOut(duration: 0.35)) {
+                        selection = .plans
+                    }
+                    try? await Task.sleep(for: .seconds(30))
+
+                    // 阶段 5：【我的：有效方法沉淀与隐私安全】(148s ~ 172s)
+                    withAnimation(.easeInOut(duration: 0.35)) {
+                        selection = .profile
+                    }
+                    try? await Task.sleep(for: .seconds(24))
+
+                    // 阶段 6：【闭环收尾】(172s ~ 176s)
+                    withAnimation(.easeInOut(duration: 0.35)) {
+                        selection = .today
+                    }
+                }
+            }
 #endif
         }
         .onChange(of: scenePhase) { _, newPhase in
@@ -287,6 +360,7 @@ struct RootTabView: View {
                 demoHealthSession.markAppAsExited()
             case .active:
                 checkInCoordinator.enterApp(dataMode: healthDataMode)
+                demoCheckInCoordinator.enterApp(dataMode: .demo)
                 Task {
                     await notificationAuthorizationSession.refresh()
                     await activeHealthSession.refreshOnceForCurrentAppEntry()
@@ -350,7 +424,7 @@ struct RootTabView: View {
             if healthDataMode == .demo, isDemoAvailable {
                 TodayView(
                     healthSession: demoHealthSession,
-                    checkInCoordinator: checkInCoordinator,
+                    checkInCoordinator: demoCheckInCoordinator,
                     settingsDestination: { goals in
                         AnyView(settingsView(goals: goals))
                     }
@@ -379,6 +453,9 @@ struct RootTabView: View {
                 AssistantView(
                     healthSession: demoHealthSession,
                     planSession: microPlanSession,
+                    checkInCoordinator: demoCheckInCoordinator,
+                    contextLoader: assistantFactContextLoader,
+                    includesSyntheticDemoFacts: true,
                     onPlanStarted: {
                         withAnimation(.easeInOut(duration: 0.22)) {
                             selection = .plans
@@ -391,6 +468,8 @@ struct RootTabView: View {
                 AssistantView(
                     healthSession: liveHealthSession,
                     planSession: microPlanSession,
+                    checkInCoordinator: checkInCoordinator,
+                    contextLoader: assistantFactContextLoader,
                     onPlanStarted: {
                         withAnimation(.easeInOut(duration: 0.22)) {
                             selection = .plans
@@ -406,6 +485,7 @@ struct RootTabView: View {
                 healthSession: activeHealthSession,
                 onOpenAssistant: { selection = .assistant }
             )
+            .id("plans-\(healthDataMode.rawValue)")
         case .profile:
             ProfileSettingsView(
                 contentMode: .effectiveMethods,
@@ -426,6 +506,7 @@ struct RootTabView: View {
                     }
                 }
             )
+            .id("profile-\(healthDataMode.rawValue)")
         }
     }
 }
@@ -1067,6 +1148,23 @@ struct ProfileSettingsView: View {
         }
         .scrollIndicators(.hidden)
         .background(Color(uiColor: .systemGroupedBackground))
+#if DEBUG
+        .task {
+            guard ProcessInfo.processInfo.arguments.contains("--demo-showcase-recording") else { return }
+            try? await Task.sleep(for: .seconds(6))
+            withAnimation(.easeInOut(duration: 0.35)) {
+                effectiveMethodFilter = .sleep
+            }
+            try? await Task.sleep(for: .seconds(5))
+            withAnimation(.easeInOut(duration: 0.35)) {
+                effectiveMethodFilter = .stress
+            }
+            try? await Task.sleep(for: .seconds(5))
+            withAnimation(.easeInOut(duration: 0.35)) {
+                effectiveMethodFilter = .all
+            }
+        }
+#endif
     }
 
     private var effectiveMethodsHeader: some View {

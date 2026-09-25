@@ -104,6 +104,16 @@ class AIProxyTests(unittest.TestCase):
         plan_schema = action_schema["anyOf"][0]["properties"]["templateID"]
         self.assertEqual(set(plan_schema["enum"]), expected)
 
+    def test_schema_tracks_all_fact_categories(self) -> None:
+        expected = {
+            "healthMetrics", "todayFeeling", "recentFeelings",
+            "lifeEvents", "microPlan",
+        }
+
+        self.assertEqual(set(server.ALLOWED_FACT_KINDS), expected)
+        kind_schema = server.response_schema()["properties"]["usedFactKinds"]
+        self.assertEqual(set(kind_schema["items"]["enum"]), expected)
+
     def test_client_request_rejects_missing_fact_pack(self) -> None:
         with self.assertRaises(ValueError):
             server.validate_client_request({"question": "hello"})
@@ -119,6 +129,108 @@ class AIProxyTests(unittest.TestCase):
         self.payload["recentConversation"].append(
             {"role": "assistant", "content": "turn-10"}
         )
+        with self.assertRaises(ValueError):
+            server.validate_client_request(self.payload)
+
+    def test_client_request_accepts_whitelisted_supplemental_facts(self) -> None:
+        self.payload["factPack"]["supplementalFacts"] = {
+            "todayFeeling": {
+                "status": "recorded", "localDay": "2026-09-10",
+                "energy": 2, "stress": 4, "bodyFeeling": 3,
+                "note": "昨晚照护家人后睡得较晚",
+            },
+            "recentFeelings": {
+                "status": "recorded", "recordedDayCount": 4,
+                "expectedDayCount": 7, "energyMedian": 3,
+                "stressMedian": 4, "bodyFeelingMedian": 3,
+                "notes": [{"localDay": "2026-09-09", "note": "早上精神尚可"}],
+            },
+            "todayLifeEvents": {
+                "status": "recorded",
+                "events": [{"kind": "overtime", "occurrenceCount": 1}],
+                "details": [{"kind": "overtime", "note": "结束时间比预计晚"}],
+            },
+            "recentLifeEvents": {
+                "status": "recorded",
+                "events": [{"kind": "custom", "occurrenceCount": 1}],
+                "details": [{
+                    "kind": "custom", "customName": "家庭聚会",
+                    "note": "当天活动量较大",
+                }],
+            },
+            "microPlan": {
+                "status": "recorded", "templateID": "bedtimeBreathing",
+                "planTitle": "睡前呼吸", "taskTitle": "睡前呼吸 5 分钟",
+                "planStatus": "active", "scheduledCount": 3,
+                "completedCount": 2, "skippedCount": 0,
+                "unresolvedCount": 1, "completionRate": 2 / 3,
+                "todayOutcome": "completed", "userFeedback": ["更放松"],
+            },
+        }
+
+        validated = server.validate_client_request(self.payload)
+
+        facts = validated["factPack"]["supplementalFacts"]
+        self.assertEqual(facts["todayFeeling"]["energy"], 2)
+        self.assertEqual(facts["todayFeeling"]["note"], "昨晚照护家人后睡得较晚")
+        self.assertEqual(
+            facts["recentLifeEvents"]["details"][0]["customName"],
+            "家庭聚会",
+        )
+        self.assertEqual(facts["microPlan"]["userFeedback"], ["更放松"])
+
+    def test_client_request_rejects_unlisted_or_oversized_context_text(self) -> None:
+        self.payload["factPack"]["supplementalFacts"] = {
+            "todayFeeling": {"status": "recorded", "note": "记" * 161},
+            "recentFeelings": {"status": "notRecorded", "notes": []},
+            "todayLifeEvents": {
+                "status": "recorded",
+                "events": [{"kind": "custom", "occurrenceCount": 1}],
+                "details": [{"kind": "custom", "customName": "家庭聚会"}],
+            },
+            "recentLifeEvents": {"status": "notRecorded", "events": [], "details": []},
+            "microPlan": {"status": "notRecorded", "userFeedback": []},
+        }
+
+        with self.assertRaises(ValueError):
+            server.validate_client_request(self.payload)
+
+        self.payload["factPack"]["supplementalFacts"]["todayFeeling"] = {
+            "status": "notRecorded",
+        }
+        self.payload["factPack"]["supplementalFacts"]["todayLifeEvents"]["details"][0][
+            "recordID"
+        ] = "must-not-pass"
+        with self.assertRaises(ValueError):
+            server.validate_client_request(self.payload)
+
+    def test_prompt_treats_stored_user_text_as_untrusted_data(self) -> None:
+        instructions = server.build_deepseek_request(self.payload)["instructions"]
+
+        self.assertIn("用户填写的原文", instructions)
+        self.assertIn("不得遵循", instructions)
+
+    def test_client_request_rejects_context_text_without_recorded_status(self) -> None:
+        self.payload["factPack"]["supplementalFacts"] = {
+            "todayFeeling": {"status": "notRecorded", "note": "不应存在"},
+            "recentFeelings": {"status": "notRecorded", "notes": []},
+            "todayLifeEvents": {"status": "notRecorded", "events": [], "details": []},
+            "recentLifeEvents": {"status": "notRecorded", "events": [], "details": []},
+            "microPlan": {"status": "notRecorded", "userFeedback": []},
+        }
+
+        with self.assertRaises(ValueError):
+            server.validate_client_request(self.payload)
+
+    def test_client_request_rejects_out_of_range_supplemental_values(self) -> None:
+        self.payload["factPack"]["supplementalFacts"] = {
+            "todayFeeling": {"status": "recorded", "energy": 6},
+            "recentFeelings": {"status": "notRecorded"},
+            "todayLifeEvents": {"status": "notRecorded", "events": []},
+            "recentLifeEvents": {"status": "notRecorded", "events": []},
+            "microPlan": {"status": "notRecorded", "userFeedback": []},
+        }
+
         with self.assertRaises(ValueError):
             server.validate_client_request(self.payload)
 
@@ -297,6 +409,23 @@ class AIProxyTests(unittest.TestCase):
         normalized = server.normalize_structured_response(response, self.payload)
 
         self.assertEqual(normalized, response)
+
+    def test_rejects_unknown_used_fact_kind(self) -> None:
+        response = {
+            "summary": "摘要",
+            "supportiveClosing": "继续观察。",
+            "observedFacts": [],
+            "possibleFactors": [],
+            "uncertainty": "数据有限",
+            "followUpQuestion": None,
+            "suggestedAction": None,
+            "safetyLevel": "normal",
+            "usedMetrics": [],
+            "usedFactKinds": ["rawHealthSamples"],
+        }
+
+        with self.assertRaises(ValueError):
+            server.normalize_structured_response(response, self.payload)
 
 
 if __name__ == "__main__":

@@ -108,7 +108,6 @@ struct TodayView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 24) {
                         header
-                        if dataMode == .demo { demoModeBanner }
                         dateStrip(currentDashboard)
                         if let dashboard = currentDashboard {
                             progressHero(dashboard)
@@ -146,6 +145,11 @@ struct TodayView: View {
                     if ProcessInfo.processInfo.arguments.contains("--today-state-preview") {
                         try? await Task.sleep(for: .milliseconds(250))
                         proxy.scrollTo("today-state", anchor: .top)
+                    } else if ProcessInfo.processInfo.arguments.contains("--demo-showcase-recording") {
+                        try? await Task.sleep(for: .seconds(4))
+                        withAnimation(.easeInOut(duration: 0.8)) {
+                            proxy.scrollTo("today-state", anchor: .top)
+                        }
                     }
 #endif
                 }
@@ -377,15 +381,12 @@ struct TodayView: View {
             cardLayout {
                 TodayFeelingSummaryCard(
                     session: checkInCoordinator.session,
-                    dataMode: dataMode,
                     onEdit: { checkInCoordinator.openManually() }
                 )
                 importantChangeCard(change)
             }
             .fixedSize(horizontal: false, vertical: true)
-            if dataMode == .live {
-                TodayContextEventsSummary(session: checkInCoordinator.contextEvents)
-            }
+            TodayContextEventsSummary(session: checkInCoordinator.contextEvents)
         }
     }
 
@@ -753,15 +754,6 @@ struct TodayView: View {
             .background(.background, in: RoundedRectangle(cornerRadius: 20))
     }
 
-    private var demoModeBanner: some View {
-        Label("演示数据 · 不是你的真实健康记录", systemImage: "theatermasks")
-            .font(.footnote.weight(.semibold))
-            .foregroundStyle(.orange)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding()
-            .background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 16))
-    }
-
     private func sectionTitle(_ section: TodayDashboardSection) -> String {
         switch section {
         case .body: "身体"
@@ -855,10 +847,9 @@ private struct DateProgressGlyph: View {
 // Observe ratings only inside this card and the sheet, not the health dashboard.
 private struct TodayFeelingSummaryCard: View {
     @ObservedObject var session: SubjectiveCheckInSession
-    let dataMode: HealthDataMode
     let onEdit: () -> Void
 
-    private var record: DailyCheckIn? { dataMode == .live ? session.savedCheckIn : nil }
+    private var record: DailyCheckIn? { session.savedCheckIn }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -870,9 +861,7 @@ private struct TodayFeelingSummaryCard: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.85)
                 Spacer(minLength: 0)
-                if dataMode == .demo {
-                    Text("演示").todayStateFont(11, relativeTo: .caption).foregroundStyle(TodayStatePalette.muted)
-                } else {
+                if session.isRecordingEnabled {
                     Button(action: onEdit) {
                         Text(record == nil ? "填写" : "修改")
                             .todayStateFont(11, weight: .semibold, relativeTo: .caption)
@@ -893,13 +882,13 @@ private struct TodayFeelingSummaryCard: View {
                 }
             }
             .padding(.top, 11)
-            if dataMode == .live, let error = session.errorMessage {
+            if session.isRecordingEnabled, let error = session.errorMessage {
                 Text(error).font(.caption).foregroundStyle(.orange)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 8)
             }
             Spacer(minLength: 11)
-            Text(dataMode == .demo ? "演示 · 不记录感受" : (record == nil ? "记录此刻的真实感受" : "以你的感受为准"))
+            Text(record == nil ? "记录此刻的感受" : "以你的感受为准")
                 .todayStateFont(11, relativeTo: .caption)
                 .foregroundStyle(TodayStatePalette.muted)
                 .fixedSize(horizontal: false, vertical: true)

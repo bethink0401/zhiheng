@@ -1022,6 +1022,44 @@ extension SubjectiveRecordStoreTests {
     }
 
     @MainActor
+    func testDemoCoordinatorAllowsSessionOnlyFeelingAndEventEdits() throws {
+        let date = Date(timeIntervalSince1970: 1_800_000_000)
+        let store = DemoSubjectiveRecordStore(endingAt: date)
+        let coordinator = DailyCheckInCoordinator(
+            store: store,
+            preferences: try promptPreferences(),
+            referenceDate: date,
+            allowsDemoRecords: true
+        )
+
+        coordinator.enterApp(at: date, dataMode: .demo)
+        XCTAssertTrue(coordinator.session.isRecordingEnabled)
+        coordinator.openManually(at: date)
+        XCTAssertTrue(coordinator.isPresented)
+        coordinator.session.energy = .five
+        coordinator.session.stress = .one
+        coordinator.session.bodyFeeling = .four
+        coordinator.session.note = "演示中修改后的感受"
+        XCTAssertTrue(coordinator.save(at: date))
+        XCTAssertEqual(
+            try store.checkIn(on: SubjectiveLocalDay(date: date))?.note,
+            "演示中修改后的感受"
+        )
+
+        let eventSession = coordinator.contextEvents
+        eventSession.open(at: date)
+        XCTAssertTrue(eventSession.isPresented)
+        eventSession.select(.travel)
+        eventSession.note = "演示中新增的生活事件"
+        XCTAssertTrue(eventSession.save(at: date))
+        let savedEvent = try XCTUnwrap(eventSession.events.first {
+            $0.note == "演示中新增的生活事件"
+        })
+        XCTAssertTrue(eventSession.delete(id: savedEvent.id, at: date))
+        XCTAssertFalse(eventSession.events.contains { $0.id == savedEvent.id })
+    }
+
+    @MainActor
     func testPromptSaveFailureKeepsWindowAndDraftForRetry() throws {
         let store = TestSubjectiveRecordStore()
         store.failsWrites = true

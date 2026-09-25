@@ -110,12 +110,11 @@ enum SevenDayHealthSummaryFactory {
         let summaryContextState: SevenDayHealthSummary.ContextState
         switch contextState {
         case .available(let context):
-            guard factSet.dataMode == .live,
-                  context.dataMode == .live,
+            guard context.dataMode == factSet.dataMode,
                   context.window == window else {
                 throw SevenDayHealthSummaryError.invalidContextState
             }
-            cardContext = .available(context)
+            cardContext = factSet.dataMode == .demo ? .demoMode : .available(context)
             subjectiveState = subjectiveSummary(context.checkIns)
             summaryContextState = eventSummary(context.contextEvents)
         case .demoMode:

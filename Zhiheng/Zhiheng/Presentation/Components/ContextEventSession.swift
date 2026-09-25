@@ -21,6 +21,8 @@ final class ContextEventSession: ObservableObject {
     private let store: any SubjectiveRecordStore
     private var dayInterval: DateInterval?
     private var pendingEvent: ContextEvent?
+    private var dataMode: HealthDataMode = .live
+    private var allowsDemoRecords = false
 
     init(store: any SubjectiveRecordStore) { self.store = store }
 
@@ -46,9 +48,13 @@ final class ContextEventSession: ObservableObject {
         at date: Date = Date(),
         dataMode: HealthDataMode,
         timeZone: TimeZone = .autoupdatingCurrent,
-        forceRead: Bool = false
+        forceRead: Bool = false,
+        allowsDemoRecords: Bool = false
     ) {
-        let enabled = dataMode == .live
+        self.dataMode = dataMode
+        self.allowsDemoRecords = allowsDemoRecords
+        let enabled = dataMode == .live || (dataMode == .demo && allowsDemoRecords)
+        let canRead = enabled || allowsDemoRecords
         let interval = Self.interval(for: date, timeZone: timeZone)
         let changed = dayInterval != interval || isRecordingEnabled != enabled
         if changed {
@@ -63,7 +69,7 @@ final class ContextEventSession: ObservableObject {
             errorMessage = nil
             notice = isPresented && enabled ? "已进入新的本地日期，请重新选择生活事件。" : nil
         }
-        guard enabled else {
+        guard canRead else {
             isPresented = false
             return
         }
@@ -80,7 +86,13 @@ final class ContextEventSession: ObservableObject {
 
     func open(at date: Date = Date(), timeZone: TimeZone = .autoupdatingCurrent) {
         guard isRecordingEnabled else { return }
-        prepare(at: date, dataMode: .live, timeZone: timeZone, forceRead: true)
+        prepare(
+            at: date,
+            dataMode: dataMode,
+            timeZone: timeZone,
+            forceRead: true,
+            allowsDemoRecords: allowsDemoRecords
+        )
         isPresented = true
     }
 
@@ -145,7 +157,12 @@ final class ContextEventSession: ObservableObject {
     private func validateDay(at date: Date, timeZone: TimeZone) -> Bool {
         guard isRecordingEnabled else { return false }
         guard dayInterval == Self.interval(for: date, timeZone: timeZone) else {
-            prepare(at: date, dataMode: .live, timeZone: timeZone)
+            prepare(
+                at: date,
+                dataMode: dataMode,
+                timeZone: timeZone,
+                allowsDemoRecords: allowsDemoRecords
+            )
             notice = "已进入新的本地日期，请重新选择生活事件。"
             return false
         }

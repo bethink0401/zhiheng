@@ -364,7 +364,7 @@ enum HealthMetricTrendLevel: String, Equatable, Sendable {
     case sustainedChange
 }
 
-enum HealthMetricTrendDirection: String, Equatable, Sendable {
+enum HealthMetricTrendDirection: String, Codable, Equatable, Sendable {
     case higher
     case lower
 }

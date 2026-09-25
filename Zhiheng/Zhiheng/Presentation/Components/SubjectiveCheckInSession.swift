@@ -39,12 +39,14 @@ final class SubjectiveCheckInSession: ObservableObject {
     func load(
         for date: Date,
         timeZone: TimeZone = .autoupdatingCurrent,
-        isRecordingEnabled: Bool = true
+        isRecordingEnabled: Bool = true,
+        shouldRead: Bool? = nil
     ) {
         self.isRecordingEnabled = isRecordingEnabled
         didLoadRecord = false
         errorMessage = nil
-        guard isRecordingEnabled else {
+        let canRead = shouldRead ?? isRecordingEnabled
+        guard canRead else {
             loadedDay = nil
             savedCheckIn = nil
             energy = nil
@@ -146,17 +148,24 @@ final class DailyCheckInCoordinator: ObservableObject {
     private let preferences: UserDefaults
     private var dayKey: String?
     private var dataMode: HealthDataMode = .live
+    private let allowsDemoRecords: Bool
+
+    private var canEditCurrentRecords: Bool {
+        dataMode == .live || (dataMode == .demo && allowsDemoRecords)
+    }
 
     init(
         store: any SubjectiveRecordStore,
         preferences: UserDefaults = .standard,
-        referenceDate: Date = Date()
+        referenceDate: Date = Date(),
+        allowsDemoRecords: Bool = false
     ) {
         session = SubjectiveCheckInSession(store: store)
         contextEvents = ContextEventSession(store: store)
         history = SubjectiveHistorySession(store: store)
         self.preferences = preferences
         self.referenceDate = referenceDate
+        self.allowsDemoRecords = allowsDemoRecords
         history.onRecordsChanged = { [weak self] record in
             self?.refreshAfterHistoryChange(record)
         }
@@ -167,8 +176,14 @@ final class DailyCheckInCoordinator: ObservableObject {
         dataMode: HealthDataMode,
         timeZone: TimeZone = .autoupdatingCurrent
     ) {
+        let canEditRecords = dataMode == .live || (dataMode == .demo && allowsDemoRecords)
         history.setDataMode(dataMode)
-        contextEvents.prepare(at: date, dataMode: dataMode, timeZone: timeZone)
+        contextEvents.prepare(
+            at: date,
+            dataMode: dataMode,
+            timeZone: timeZone,
+            allowsDemoRecords: allowsDemoRecords
+        )
         let key = SubjectiveLocalDay(date: date, timeZone: timeZone).storageKey
         let changedDay = dayKey != key
         if changedDay || self.dataMode != dataMode {
@@ -176,13 +191,18 @@ final class DailyCheckInCoordinator: ObservableObject {
             dayKey = key
             referenceDate = date
             notice = nil
-            session.load(for: date, timeZone: timeZone, isRecordingEnabled: dataMode == .live)
+            session.load(
+                for: date,
+                timeZone: timeZone,
+                isRecordingEnabled: canEditRecords,
+                shouldRead: dataMode == .live || allowsDemoRecords
+            )
             if changedDay && isPresented && dataMode == .live {
                 notice = "已进入新的一天，请重新选择今日感受。"
                 markPresented()
             }
         }
-        guard dataMode == .live else {
+        guard canEditRecords else {
             isPresented = false
             return
         }
@@ -197,10 +217,15 @@ final class DailyCheckInCoordinator: ObservableObject {
     }
 
     func openManually(at date: Date = Date(), timeZone: TimeZone = .autoupdatingCurrent) {
-        guard dataMode == .live else { return }
-        enterApp(at: date, dataMode: .live, timeZone: timeZone)
+        guard canEditCurrentRecords else { return }
+        enterApp(at: date, dataMode: dataMode, timeZone: timeZone)
         if !session.didLoadRecord {
-            session.load(for: date, timeZone: timeZone)
+            session.load(
+                for: date,
+                timeZone: timeZone,
+                isRecordingEnabled: true,
+                shouldRead: true
+            )
         }
         isPresented = true
     }
@@ -233,10 +258,10 @@ final class DailyCheckInCoordinator: ObservableObject {
 
     @discardableResult
     func save(at date: Date = Date(), timeZone: TimeZone = .autoupdatingCurrent) -> Bool {
-        guard dataMode == .live else { return false }
+        guard canEditCurrentRecords else { return false }
         let key = SubjectiveLocalDay(date: date, timeZone: timeZone).storageKey
         guard key == dayKey else {
-            enterApp(at: date, dataMode: .live, timeZone: timeZone)
+            enterApp(at: date, dataMode: dataMode, timeZone: timeZone)
             notice = "已进入新的一天，请重新选择今日感受。"
             return false
         }

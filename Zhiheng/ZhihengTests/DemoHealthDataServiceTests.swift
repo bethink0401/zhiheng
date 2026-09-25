@@ -116,6 +116,157 @@ final class DemoHealthDataServiceTests: XCTestCase {
         )
     }
 
+    func testDashboardScenarioUsesNinetyDayNaturalHistoryAndARealMissingDay() async throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "Asia/Shanghai"))
+        let endDate = try XCTUnwrap(calendar.date(from: DateComponents(
+            year: 2026,
+            month: 9,
+            day: 14,
+            hour: 12
+        )))
+        let service = try DemoHealthScenarioFactory.dashboard(
+            endingAt: endDate,
+            calendar: calendar
+        )
+        let interval = DateInterval(
+            start: try XCTUnwrap(calendar.date(byAdding: .day, value: -100, to: endDate)),
+            end: endDate.addingTimeInterval(24 * 60 * 60)
+        )
+
+        let restingHeartRate = try await service.fetchSamples(
+            for: .restingHeartRate,
+            interval: interval
+        )
+        let hrv = try await service.fetchSamples(
+            for: .heartRateVariability,
+            interval: interval
+        )
+        let sleep = try await service.fetchSamples(
+            for: .sleepDuration,
+            interval: interval
+        )
+
+        XCTAssertEqual(restingHeartRate.count, 90)
+        XCTAssertEqual(hrv.filter { calendar.component(.hour, from: $0.endDate) == 7 }.count, 89)
+        XCTAssertFalse(hrv.contains { $0.value == 0 })
+        XCTAssertGreaterThan(Set(restingHeartRate.prefix(28).map { Int($0.value * 10) }).count, 12)
+
+        let sleepByDay = Dictionary(grouping: sleep) {
+            calendar.startOfDay(for: $0.endDate)
+        }.mapValues { $0.map(\.value).reduce(0, +) }
+        let recentSleep = sleepByDay.keys.sorted().suffix(8).compactMap { sleepByDay[$0] }
+        XCTAssertEqual(recentSleep.count, 8)
+        XCTAssertEqual(try XCTUnwrap(recentSleep.first), 6.90, accuracy: 0.001)
+        XCTAssertEqual(try XCTUnwrap(recentSleep.last), 6.47, accuracy: 0.001)
+        XCTAssertGreaterThan(Set(sleepByDay.values.map { Int($0 * 100) }).count, 20)
+    }
+
+    func testDashboardActivityUsesVariedDailyTotalsAndAwakeHourPatterns() async throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "Asia/Shanghai"))
+        let endDate = try XCTUnwrap(calendar.date(from: DateComponents(
+            year: 2026,
+            month: 9,
+            day: 14,
+            hour: 12
+        )))
+        let service = try DemoHealthScenarioFactory.dashboard(
+            endingAt: endDate,
+            calendar: calendar
+        )
+        let interval = DateInterval(
+            start: try XCTUnwrap(calendar.date(byAdding: .day, value: -7, to: calendar.startOfDay(for: endDate))),
+            end: try XCTUnwrap(calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: endDate)))
+        )
+        let steps = try await service.fetchSamples(for: .stepCount, interval: interval)
+        let energy = try await service.fetchSamples(for: .activeEnergy, interval: interval)
+        let stepTotals = Dictionary(grouping: steps) {
+            calendar.startOfDay(for: $0.endDate)
+        }.mapValues { $0.map(\.value).reduce(0, +) }
+        let energyTotals = Dictionary(grouping: energy) {
+            calendar.startOfDay(for: $0.endDate)
+        }.mapValues { $0.map(\.value).reduce(0, +) }
+        let days = stepTotals.keys.sorted()
+        let recentSteps = days.compactMap { stepTotals[$0] }
+        let recentEnergy = days.compactMap { energyTotals[$0] }
+
+        XCTAssertEqual(recentSteps.count, 8)
+        XCTAssertEqual(recentSteps.map { Int($0.rounded()) }, [
+            8_240, 10_680, 7_360, 12_140, 8_910, 10_420, 7_780, 9_630,
+        ])
+        XCTAssertEqual(recentEnergy.map { Int($0.rounded()) }, [
+            418, 572, 386, 648, 463, 594, 521, 489,
+        ])
+        XCTAssertTrue((steps + energy).allSatisfy {
+            (6...22).contains(calendar.component(.hour, from: $0.endDate))
+        })
+        let kcalPerThousandSteps = zip(recentEnergy, recentSteps).map {
+            Int(($0.0 / $0.1 * 1_000).rounded())
+        }
+        XCTAssertGreaterThan(Set(kcalPerThousandSteps).count, 4)
+        XCTAssertTrue(zip(recentSteps, recentSteps.dropFirst()).contains { $0.1 < $0.0 })
+        XCTAssertTrue(zip(recentSteps, recentSteps.dropFirst()).contains { $0.1 > $0.0 })
+    }
+
+    @MainActor
+    func testDemoSubjectiveStoreProvidesCoherentEditableInMemoryCheckInsAndEvents() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "Asia/Shanghai"))
+        let endDate = try XCTUnwrap(calendar.date(from: DateComponents(
+            year: 2026,
+            month: 9,
+            day: 14,
+            hour: 12
+        )))
+        let store = DemoSubjectiveRecordStore(
+            endingAt: endDate,
+            calendar: calendar
+        )
+        let localDay = SubjectiveLocalDay(date: endDate, timeZone: calendar.timeZone)
+        let today = try XCTUnwrap(store.checkIn(on: localDay))
+
+        XCTAssertEqual(today.energy, .two)
+        XCTAssertEqual(today.stress, .four)
+        XCTAssertEqual(today.bodyFeeling, .three)
+        XCTAssertTrue(today.note?.contains("工作节奏") == true)
+
+        let interval = DateInterval(
+            start: try XCTUnwrap(calendar.date(byAdding: .day, value: -7, to: endDate)),
+            end: endDate.addingTimeInterval(24 * 60 * 60)
+        )
+        let events = try store.contextEvents(overlapping: interval)
+        XCTAssertEqual(events.count, 5)
+        XCTAssertTrue(events.contains { $0.kind == .deviceNotWorn })
+        XCTAssertTrue(events.contains { $0.kind == .deadline })
+        let updated = try DailyCheckIn(
+            id: today.id,
+            localDay: localDay,
+            energy: .four,
+            stress: .two,
+            bodyFeeling: .four,
+            note: "演示修改",
+            recordedAt: today.recordedAt,
+            updatedAt: endDate
+        )
+        XCTAssertEqual(try store.save(updated), updated)
+        XCTAssertEqual(try store.checkIn(on: localDay), updated)
+
+        let event = try ContextEvent(
+            kind: .travel,
+            startedAt: endDate,
+            note: "演示新增",
+            createdAt: endDate
+        )
+        try store.save(event)
+        XCTAssertTrue(try store.contextEvents(overlapping: interval).contains { $0.id == event.id })
+        try store.deleteContextEvent(id: event.id)
+        XCTAssertFalse(try store.contextEvents(overlapping: interval).contains { $0.id == event.id })
+
+        try store.deleteCheckIn(on: localDay)
+        XCTAssertNil(try store.checkIn(on: localDay))
+    }
+
     func testSleepDeclineScenarioHasStableBaselineAndSevenDayDecline() async throws {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "Asia/Shanghai"))

@@ -93,7 +93,8 @@ struct OpenAIProxyService: AIService, Sendable {
             }
             return try HealthAIResponseValidator.validate(
                 modelResponse,
-                against: request.factPack
+                against: request.factPack,
+                planEvaluation: request.planEvaluation
             )
         } catch is CancellationError {
             throw HealthAIServiceError.cancelled
@@ -191,7 +192,8 @@ struct OpenAIProxyService: AIService, Sendable {
                 }
                 let validated = try HealthAIResponseValidator.validate(
                     response,
-                    against: request.factPack
+                    against: request.factPack,
+                    planEvaluation: request.planEvaluation
                 )
                 continuation.yield(.completed(validated))
                 didComplete = true
